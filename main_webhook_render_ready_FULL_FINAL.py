@@ -1,4 +1,3 @@
-
 import threading
 from flask import Flask
 
@@ -6,7 +5,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "Majbur bot ishlayapti!"
+    return "Majbur bot v2 ishlayapti!"
 
 def run_web():
     app_flask.run(host="0.0.0.0", port=8080)
@@ -20,11 +19,11 @@ import os
 from collections import defaultdict
 
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, BotCommandScopeAllPrivateChats
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters, ChatMemberHandler
+    ContextTypes, filters
 )
 
 logging.basicConfig(
@@ -37,6 +36,7 @@ TOKEN = os.getenv("TOKEN") or "YOUR_TOKEN_HERE"
 # --------- Global holat ---------
 MAJBUR_LIMIT = 0  # 0 => o'chirilgan
 FOYDALANUVCHI_HISOBI = defaultdict(int)  # user_id -> qo'shgan odamlar soni
+RUXSAT_USER_IDS = set()  # imtiyoz berilganlar (bypass)
 
 # --------- Admin/Owner aniqlash ---------
 async def is_admin(update: Update) -> bool:
@@ -71,9 +71,10 @@ async def is_privileged_message(msg, bot) -> bool:
 
 # --------- Inline klaviatura (/majbur uchun) ---------
 def majbur_klaviatura():
+    # Minimal 3, maksimal 25 — 10 ta tugma
     rows = [
-        [10, 20, 30, 40, 50],
-        [60, 70, 80, 90, 100],
+        [3, 5, 7, 10, 12],
+        [15, 18, 20, 22, 25],
     ]
     keyboard = [[InlineKeyboardButton(str(n), callback_data=f"set_limit:{n}") for n in row] for row in rows]
     keyboard.append([InlineKeyboardButton("❌ BEKOR QILISH ❌", callback_data="set_limit:cancel")])
@@ -95,13 +96,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📌 <b>Buyruqlar</b>\n\n"
-        "🔹 <b>/majbur [son]</b> — Majburiy odam qo‘shish limitini o‘rnatish. Agar son yozilmasa, menyu chiqadi.\n"
+        "🔹 <b>/majbur [son]</b> — Majburiy odam qo‘shish limitini o‘rnatish (min 3, max 25). Agar son yozilmasa, menyu chiqadi.\n"
         "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
         "🔹 <b>/top</b> — Eng ko‘p qo‘shgan TOP 100.\n"
         "🔹 <b>/cleangroup</b> — Hamma hisobini 0 qilish.\n"
         "🔹 <b>/count</b> — Siz nechta odam qo‘shgansiz.\n"
         "🔹 <b>/replycount</b> — Reply qilingan foydalanuvchi hisobi.\n"
-        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisobini 0 qilish.\n"
+        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisobi 0.\n"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -114,12 +115,12 @@ async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         try:
             val = int(context.args[0])
-            if val < 0:
+            if not (3 <= val <= 25):
                 raise ValueError
             MAJBUR_LIMIT = val
             await update.message.reply_text(f"✅ Majburiy odam qo‘shish limiti: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
         except ValueError:
-            await update.message.reply_text("❌ Noto‘g‘ri qiymat. Masalan: <code>/majbur 10</code>", parse_mode="HTML")
+            await update.message.reply_text("❌ Noto‘g‘ri qiymat. Ruxsat etilgan oraliq: <b>3–25</b>. Masalan: <code>/majbur 10</code>", parse_mode="HTML")
     else:
         await update.message.reply_text(
             "👥 Guruhda majburiy odam qo‘shishni nechta qilib belgilay? 👇\nQo‘shish shart emas — /majburoff",
@@ -140,6 +141,8 @@ async def on_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         val = int(data)
+        if not (3 <= val <= 25):
+            raise ValueError
         MAJBUR_LIMIT = val
         await query.edit_message_text(f"✅ Majburiy odam qo‘shish limiti: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
     except Exception:
@@ -162,7 +165,6 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not FOYDALANUVCHI_HISOBI:
         await update.message.reply_text("Hali hech kim odam qo‘shmagan.")
         return
-    # Top 100
     items = sorted(FOYDALANUVCHI_HISOBI.items(), key=lambda x: x[1], reverse=True)[:100]
     lines = ["🏆 <b>Eng ko‘p odam qo‘shganlar</b> (TOP 100):"]
     for i, (uid, cnt) in enumerate(items, start=1):
@@ -175,7 +177,8 @@ async def cleangroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Bu komanda faqat adminlar uchun.")
         return
     FOYDALANUVCHI_HISOBI.clear()
-    await update.message.reply_text("🗑 Barcha foydalanuvchilar hisobi 0 qilindi.")
+    RUXSAT_USER_IDS.clear()
+    await update.message.reply_text("🗑 Barcha foydalanuvchilar hisobi va imtiyozlar 0 qilindi.")
 
 # --------- /count ---------
 async def count_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -209,7 +212,8 @@ async def cleanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     uid = update.message.reply_to_message.from_user.id
     FOYDALANUVCHI_HISOBI[uid] = 0
-    await update.message.reply_text(f"🗑 <code>{uid}</code> foydalanuvchi hisobi 0 qilindi.", parse_mode="HTML")
+    RUXSAT_USER_IDS.discard(uid)
+    await update.message.reply_text(f"🗑 <code>{uid}</code> foydalanuvchi hisobi 0 qilindi (imtiyoz o‘chirildi).", parse_mode="HTML")
 
 # --------- Yangi a'zolarni hisoblash ---------
 async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,18 +237,26 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
         return
+    # Admin/owner/anonymous admin bypass
     if await is_privileged_message(msg, context.bot):
         return
     uid = msg.from_user.id
+    # Imtiyoz berilgan foydalanuvchi bypass
+    if uid in RUXSAT_USER_IDS:
+        return
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if cnt >= MAJBUR_LIMIT:
         return
+    # Yetarli odam qo'shmagan — xabarini o'chiramiz va eslatma
     try:
         await msg.delete()
     except:
         return
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
-    kb = [[InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")]]
+    kb = [
+        [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")],
+        [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")]
+    ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
         text=f"⚠️ Guruhda yozish uchun {MAJBUR_LIMIT} ta odam qo‘shishingiz kerak! Qolgan: {qoldi} ta.",
@@ -257,17 +269,43 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     uid = q.from_user.id
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
-    if cnt >= MAJBUR_LIMIT:
+    if uid in RUXSAT_USER_IDS or cnt >= MAJBUR_LIMIT:
         await q.edit_message_text("✅ Talab bajarilgan! Endi guruhda yozishingiz mumkin.")
     else:
         qoldi = max(MAJBUR_LIMIT - cnt, 0)
         await q.edit_message_text(f"❌ Hali yetarli emas. Qolgan: {qoldi} ta.")
 
+# --------- Callback: grant privilege ---------
+async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    # grant tugmasini faqat admin bera olsin
+    chat = q.message.chat if q.message else None
+    user = q.from_user
+    if not (chat and user):
+        await q.answer()
+        return
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        if member.status not in ("administrator", "creator"):
+            await q.answer("Faqat adminlar imtiyoz bera oladi!", show_alert=True)
+            return
+    except Exception:
+        await q.answer("Tekshirishda xatolik.", show_alert=True)
+        return
+    await q.answer()
+    try:
+        target_id = int(q.data.split(":", 1)[1])
+    except Exception:
+        await q.edit_message_text("❌ Noto‘g‘ri ma'lumot.")
+        return
+    RUXSAT_USER_IDS.add(target_id)
+    await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
+
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
     await app.bot.set_my_commands(commands=[
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish"),
+        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
         BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
         BotCommand("top", "TOP 100 ro‘yxati"),
         BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
@@ -291,7 +329,11 @@ app.add_handler(CommandHandler("count", count_cmd))
 app.add_handler(CommandHandler("replycount", replycount))
 app.add_handler(CommandHandler("cleanuser", cleanuser))
 
-# New/left members (kirish/chiqish) — kirishda adder hisoblanaadi
+# Callback handlers for buttons
+app.add_handler(CallbackQueryHandler(on_check_added, pattern="^check_added$"))
+app.add_handler(CallbackQueryHandler(on_grant_priv, pattern="^grant:"))
+
+# New members (kirish)
 app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
 
 # Majburiy limit filter — barcha non-command xabarlar
@@ -302,15 +344,14 @@ media_filters = (
     filters.Document.ALL |
     filters.ANIMATION |
     filters.VOICE |
-    filters.VIDEO_NOTE |
-    filters.Sticker.ALL
+    filters.VIDEO_NOTE
 )
 app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter))
 
 # --------- Run ---------
 async def main():
     await set_commands(app)
-    logging.info("✅ Majbur bot ishga tushdi...")
+    logging.info("✅ Majbur bot v2 ishga tushdi...")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
