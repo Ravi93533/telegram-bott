@@ -4,6 +4,7 @@ import os
 import re
 import logging
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 from flask import Flask
 
@@ -16,6 +17,7 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
+# ----------- Small keep-alive web server -----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -28,6 +30,7 @@ def run_web():
 def start_web():
     threading.Thread(target=run_web, daemon=True).start()
 
+# ----------- Config -----------
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -36,12 +39,19 @@ TOKEN = os.getenv("TOKEN") or "YOUR_TOKEN_HERE"
 WHITELIST = {165553982, "Yunus1995"}
 TUN_REJIMI = False
 KANAL_USERNAME = None
-FOYDALANUVCHILAR = set()
 
 MAJBUR_LIMIT = 0
 FOYDALANUVCHI_HISOBI = defaultdict(int)
 RUXSAT_USER_IDS = set()
 
+# So'kinish lug'ati
+UYATLI_SOZLAR = {"am","qotaq","kot","tashak","fuck","bitch","pidor","gandon","qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"}
+
+# Game/inline reklama kalit so'zlar/domenlar
+SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
+SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
+
+# ----------- Helpers -----------
 async def is_admin(update: Update) -> bool:
     chat = update.effective_chat
     user = update.effective_user
@@ -55,13 +65,10 @@ async def is_admin(update: Update) -> bool:
         return False
 
 async def is_privileged_message(msg, bot) -> bool:
-    """
-    Adminlar, guruh nomidan yozilgan xabarlar (sender_chat) va creatorlar uchun True qaytaradi.
-    """
+    """Adminlar, creatorlar yoki guruh nomidan yozilgan (sender_chat) xabarlar uchun True."""
     try:
         chat = msg.chat
         user = msg.from_user
-        # group-as-channel message
         if getattr(msg, "sender_chat", None) and msg.sender_chat.id == chat.id:
             return True
         if user:
@@ -86,21 +93,39 @@ async def kanal_tekshir(user_id: int, bot) -> bool:
 def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
-UYATLI_SOZLAR = {"am","qotaq","kot","tashak","fuck","bitch","pidor","gandon","qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"}
-
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{bot_username}?startgroup=start")]]
     )
 
+def has_suspicious_buttons(msg) -> bool:
+    try:
+        kb = msg.reply_markup.inline_keyboard if msg.reply_markup else []
+        for row in kb:
+            for btn in row:
+                if getattr(btn, "callback_game", None) is not None:
+                    return True
+                u = getattr(btn, "url", "") or ""
+                if u:
+                    low = u.lower()
+                    if any(dom in low for dom in SUSPECT_DOMAINS) or any(x in low for x in ("game", "play", "tgme")):
+                        return True
+                wa = getattr(btn, "web_app", None)
+                if wa and getattr(wa, "url", None):
+                    if any(dom in wa.url.lower() for dom in SUSPECT_DOMAINS):
+                        return True
+        return False
+    except Exception:
+        return False
+
+# ----------- Commands -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    FOYDALANUVCHILAR.add(update.effective_user.id)
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
     await update.effective_message.reply_text(
         "<b>Salom👋</b>\n"
-        "Men reklamalarni, ssilkalarni va kirdi-chiqdi xabarlarni guruhdan o‘chiraman, "
+        "Men reklamalarni, ssilkalarni, game/inline reklamalari va kirdi-chiqdi xabarlarni guruhdan o‘chiraman, "
         "majburiy kanalga a'zo bo‘ldiraman, 18+ so‘zlarni tozalayman va foydali komandalar bilan yordam beraman.\n\n"
-        "Bot komandalari qo‘llanmasi 👉 /help\n\n"
+        "Bot komandalari 👉 /help\n"
         "<b>Admin</b> huquqi berishni unutmang 🙂",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(kb)
@@ -109,19 +134,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📌 <b>Buyruqlar ro‘yxati</b>\n\n"
-        "🔹 <b>/id</b> - Акканунтингиз ID сини аниқлайди.\n"
-        "🔹 <b>/tun</b> - Барча ёзилган хабарлар автоматик ўчирилади.\n"
-        "🔹 <b>/tunoff</b> - Тун режими ўчирилади.\n"
-        "🔹 <b>/ruxsat</b> - Reply орқали белгиланган odamga рухсат берилади.\n"
-        "🔹 <b>/kanal @username</b> - Каналга азо бўлишга мажбурлайди.\n"
-        "🔹 <b>/kanaloff</b> - Каналга мажбур азо бўлишни ўчиради.\n"
-        "🔹 <b>/majbur [son]</b> — Majburiy odam qo‘shish limitini o‘rnatish (min 3, max 25). Agar son yozilmasa, menyu chiqadi.\n"
+        "🔹 <b>/id</b> - ID ni ko‘rsatadi.\n"
+        "🔹 <b>/tun</b> — Tun rejimini yoqish.\n"
+        "🔹 <b>/tunoff</b> — Tun rejimini o‘chirish.\n"
+        "🔹 <b>/ruxsat</b> — Reply orqali imtiyoz berish.\n"
+        "🔹 <b>/kanal @username</b> — Majburiy kanal sozlash.\n"
+        "🔹 <b>/kanaloff</b> — Majburiy kanalni o‘chirish.\n"
+        "🔹 <b>/majbur [3–25]</b> — Majburiy odam limiti. Son bo‘lmasa menyu chiqadi.\n"
         "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
-        "🔹 <b>/top</b> — Eng ko‘p qo‘shgan TOP 100.\n"
-        "🔹 <b>/cleangroup</b> — Hamma hisobini 0 qilish.\n"
-        "🔹 <b>/count</b> — Siz nechta odam qo‘shgansiz.\n"
+        "🔹 <b>/top</b> — TOP 100 qo‘shganlar.\n"
+        "🔹 <b>/cleangroup</b> — Barcha hisoblarni 0 qilish.\n"
+        "🔹 <b>/count</b> — O‘zingiz nechta qo‘shdingiz.\n"
         "🔹 <b>/replycount</b> — Reply qilingan foydalanuvchi hisobi.\n"
-        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisоби 0.\n"
+        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisobini 0 qilish.\n"
     )
     await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
@@ -330,35 +355,12 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     RUXSAT_USER_IDS.add(target_id)
     await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
 
-SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
-SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
-
-def has_suspicious_buttons(msg) -> bool:
-    try:
-        kb = msg.reply_markup.inline_keyboard if msg.reply_markup else []
-        for row in kb:
-            for btn in row:
-                # url, web_app or callback_game buttons indicate game/ad
-                if getattr(btn, "callback_game", None) is not None:
-                    return True
-                u = getattr(btn, "url", "") or ""
-                if u:
-                    low = u.lower()
-                    if any(dom in low for dom in SUSPECT_DOMAINS) or any(x in low for x in ("game", "play", "tgme")):
-                        return True
-                wa = getattr(btn, "web_app", None)
-                if wa and getattr(wa, "url", None):
-                    if any(dom in wa.url.lower() for dom in SUSPECT_DOMAINS):
-                        return True
-        return False
-    except Exception:
-        return False
-
+# ----------- Filters -----------
 async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg or not msg.chat or not msg.from_user:
         return
-    # Admin/creator/guruh nomidan xabarlar - teginmaymiz
+    # Admin/creator/guruh nomidan xabarlar — teginmaymiz
     if await is_privileged_message(msg, context.bot):
         return
     # Oq ro'yxat
@@ -391,7 +393,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
     text = msg.text or msg.caption or ""
     entities = msg.entities or msg.caption_entities or []
 
-    # 🚫 Inline bot orqali kelgan (via @BotName) — ko'pincha game reklama
+    # Inline bot orqali kelgan xabar — ko'pincha game reklama
     if getattr(msg, "via_bot", None):
         try:
             await msg.delete()
@@ -404,7 +406,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # 🚫 Tugmalarda game/web-app/URL bo'lsa — blok
+    # Tugmalarda game/web-app/URL bo'lsa — blok
     if has_suspicious_buttons(msg):
         try:
             await msg.delete()
@@ -417,7 +419,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # 🐱 Cattea/Gamee va o‘xshash game postlarini matndan aniqlash
+    # Matndan o‘yin reklamasini aniqlash
     low = text.lower()
     if any(k in low for k in SUSPECT_KEYWORDS):
         try:
@@ -431,11 +433,11 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
-    # ✅ BOTDAN KELGAN REKLAMA/HAVOLA/GAME-ni o'chirish
+    # Botlardan kelgan reklama/havola/game
     if getattr(msg.from_user, "is_bot", False):
         has_game = bool(getattr(msg, "game", None))
         has_url_entity = any(ent.type in ("text_link", "url", "mention") for ent in entities)
-        has_url_text = any(x in text for x in ("t.me","telegram.me","http://","https://","www.","youtu.be","youtube.com"))
+        has_url_text = any(x in low for x in ("t.me","telegram.me","http://","https://","www.","youtu.be","youtube.com"))
         if has_game or has_url_entity or has_url_text:
             try:
                 await msg.delete()
@@ -464,7 +466,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
                 )
                 return
 
-    if any(x in text for x in ("t.me","telegram.me","@","www.","https://youtu.be","http://","https://")):
+    if any(x in low for x in ("t.me","telegram.me","@","www.","https://youtu.be","http://","https://")):
         try:
             await msg.delete()
         except:
@@ -490,6 +492,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
         )
         return
 
+# Yangi a'zolarni qo'shganlarni hisoblash hamda kirdi/chiqdi xabarlarni o'chirish
 async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     adder = msg.from_user
@@ -504,6 +507,7 @@ async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
+# Majburiy qo'shish filtri — yetmaganlarda 5 daqiqaga blok ham qo'yiladi
 async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if MAJBUR_LIMIT <= 0:
         return
@@ -512,21 +516,43 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if await is_privileged_message(msg, context.bot):
         return
+
     uid = msg.from_user.id
     if uid in RUXSAT_USER_IDS:
         return
+
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if cnt >= MAJBUR_LIMIT:
         return
+
+    # Xabarni o'chiramiz
     try:
         await msg.delete()
     except:
         return
+
+    # 5 daqiqaga blok
+    until = datetime.now(timezone.utc) + timedelta(minutes=5)
+    try:
+        await context.bot.restrict_chat_member(
+            chat_id=msg.chat_id,
+            user_id=uid,
+            permissions=ChatPermissions(can_send_messages=False, can_send_media_messages=False,
+                                        can_send_polls=False, can_send_other_messages=False,
+                                        can_add_web_page_previews=False, can_change_info=False,
+                                        can_invite_users=False, can_pin_messages=False),
+            until_date=until
+        )
+    except Exception as e:
+        log.warning(f"Restrict failed: {e}")
+
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
+    until_str = until.strftime('%H:%M')
     kb = [
         [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")],
         [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
-        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]
+        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")],
+        [InlineKeyboardButton(f"⏳ 5 daqiqaga bloklandi (gacha {until_str})", callback_data="noop")]
     ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
@@ -534,6 +560,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
+# ----------- Setup -----------
 async def set_commands(app):
     await app.bot.set_my_commands(
         commands=[
@@ -559,6 +586,7 @@ async def set_commands(app):
 def main():
     start_web()
     app = ApplicationBuilder().token(TOKEN).build()
+    # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("id", id_berish))
@@ -574,14 +602,20 @@ def main():
     app.add_handler(CommandHandler("count", count_cmd))
     app.add_handler(CommandHandler("replycount", replycount))
     app.add_handler(CommandHandler("cleanuser", cleanuser))
+
+    # Callbacks
     app.add_handler(CallbackQueryHandler(on_set_limit, pattern=r"^set_limit:"))
     app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
+    app.add_handler(CallbackQueryHandler(lambda u,c: u.callback_query.answer(""), pattern=r"^noop$"))
+
+    # Events & Filters
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
     media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE | filters.GAME)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-1)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
+
     app.post_init = set_commands
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
