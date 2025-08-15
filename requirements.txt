@@ -1,2 +1,2 @@
 python-telegram-bot>=20,<21
-flask
+httpx>=0.24,<0.28
