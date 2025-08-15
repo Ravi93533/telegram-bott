@@ -572,6 +572,14 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
+
+# --- Utility callback for no-op buttons ---
+async def noop_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.callback_query.answer("")
+    except Exception:
+        pass
+
 async def set_commands(app):
     await app.bot.set_my_commands(
         commands=[
@@ -617,7 +625,7 @@ def main():
     app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added(?::\\d+)?$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
-    app.add_handler(CallbackQueryHandler(lambda u,c: u.callback_query.answer(\"\"), pattern=r\"^noop$\"))
+    app.add_handler(CallbackQueryHandler(noop_cb, pattern=r"^noop$"))
 
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
     media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE | filters.GAME)
