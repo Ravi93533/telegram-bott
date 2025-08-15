@@ -16,7 +16,6 @@ from telegram.ext import (
     ContextTypes, filters
 )
 
-# ---------------------- Flask healthcheck ----------------------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -29,14 +28,9 @@ def run_web():
 def start_web():
     threading.Thread(target=run_web, daemon=True).start()
 
-# -------------------------- Logging ---------------------------
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
 
-# ---------------------- Global holat --------------------------
 TOKEN = os.getenv("TOKEN") or "YOUR_TOKEN_HERE"
 
 WHITELIST = {165553982, "Yunus1995"}
@@ -44,12 +38,10 @@ TUN_REJIMI = False
 KANAL_USERNAME = None
 FOYDALANUVCHILAR = set()
 
-# Majburiy qo'shish
-MAJBUR_LIMIT = 0  # 0 => o'chirilgan
-FOYDALANUVCHI_HISOBI = defaultdict(int)  # user_id -> count
+MAJBUR_LIMIT = 0
+FOYDALANUVCHI_HISOBI = defaultdict(int)
 RUXSAT_USER_IDS = set()
 
-# ------------------ Helperlar ------------------
 async def is_admin(update: Update) -> bool:
     chat = update.effective_chat
     user = update.effective_user
@@ -63,7 +55,6 @@ async def is_admin(update: Update) -> bool:
         return False
 
 async def is_privileged_message(msg, bot) -> bool:
-    # creator/administrator/anonymous admin
     try:
         chat = msg.chat
         user = msg.from_user
@@ -91,16 +82,11 @@ async def kanal_tekshir(user_id: int, bot) -> bool:
 def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
-UYATLI_SOZLAR = {
-    "am","qotaq","kot","tashak","fuck","bitch","pidor","gandon",
-    "qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"
-}
+UYATLI_SOZLAR = {"am","qotaq","kot","tashak","fuck","bitch","pidor","gandon","qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"}
 
-# ------------------ Commands ------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     FOYDALANUVCHILAR.add(update.effective_user.id)
-    kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish",
-                                url=f"https://t.me/{context.bot.username}?startgroup=start")]]
+    kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
     await update.effective_message.reply_text(
         "<b>Salom👋</b>\n"
         "Men reklamalarni, ssilkalarni va kirdi-chiqdi xabarlarni guruhdan o‘chiraman, "
@@ -117,7 +103,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 <b>/id</b> - Акканунтингиз ID сини аниқлайди.\n"
         "🔹 <b>/tun</b> - Барча ёзилган хабарлар автоматик ўчирилади.\n"
         "🔹 <b>/tunoff</b> - Тун режими ўчирилади.\n"
-        "🔹 <b>/ruxsat</b> - Reply орқали белгиланган одамга рухсат берилади.\n"
+        "🔹 <b>/ruxsat</b> - Reply орқали белгиланган odamga рухсат берилади.\n"
         "🔹 <b>/kanal @username</b> - Каналга азо бўлишга мажбурлайди.\n"
         "🔹 <b>/kanaloff</b> - Каналга мажбур азо бўлишни ўчиради.\n"
         "🔹 <b>/majbur [son]</b> — Majburiy odam qo‘shish limitini o‘rnatish (min 3, max 25). Agar son yozilmasa, menyu chiqadi.\n"
@@ -176,7 +162,6 @@ async def kanaloff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     KANAL_USERNAME = None
     await update.effective_message.reply_text("🚫 Majburiy kanal talabi o‘chirildi.")
 
-# -------- Majbur: limit tanlash klaviaturasi --------
 def majbur_klaviatura():
     rows = [[3, 5, 7, 10, 12], [15, 18, 20, 22, 25]]
     keyboard = [[InlineKeyboardButton(str(n), callback_data=f"set_limit:{n}") for n in row] for row in rows]
@@ -282,7 +267,6 @@ async def cleanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     RUXSAT_USER_IDS.discard(uid)
     await msg.reply_text(f"🗑 <code>{uid}</code> foydalanuvchi hisobi 0 qilindi (imtiyoz o‘chirildi).", parse_mode="HTML")
 
-# --------- Callbacks (kanal / majbur) ---------
 async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -337,27 +321,20 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     RUXSAT_USER_IDS.add(target_id)
     await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
 
-# ------------------------------ Filters -----------------------------------
 async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg or not msg.chat or not msg.from_user:
         return
-
-    # Admin/whitelist bypass
     if await is_privileged_message(msg, context.bot):
         return
     if msg.from_user.id in WHITELIST or (msg.from_user.username and msg.from_user.username in WHITELIST):
         return
-
-    # Tun rejimi
     if TUN_REJIMI:
         try:
             await msg.delete()
         except:
             pass
         return
-
-    # Kanalga a'zolik
     if not await kanal_tekshir(msg.from_user.id, context.bot):
         try:
             await msg.delete()
@@ -370,11 +347,8 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=InlineKeyboardMarkup(kb)
         )
         return
-
     text = msg.text or msg.caption or ""
     entities = msg.entities or msg.caption_entities or []
-
-    # URL/mention
     for ent in entities:
         if ent.type in ("text_link", "url", "mention"):
             url = getattr(ent, "url", "") or ""
@@ -383,35 +357,37 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
                     await msg.delete()
                 except:
                     pass
-                await context.bot.send_message(
-                    chat_id=msg.chat_id,
-                    text=f"⚠️ {msg.from_user.first_name}, yashirin ssilka yuborish taqiqlangan!"
-                )
+                await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, yashirin ssilka yuborish taqiqlangan!")
                 return
-
     if any(x in text for x in ("t.me","telegram.me","@","www.","https://youtu.be","http://","https://")):
         try:
             await msg.delete()
         except:
             pass
-        await context.bot.send_message(
-            chat_id=msg.chat_id,
-            text=f"⚠️ {msg.from_user.first_name}, reklama/ssilka yuborish taqiqlangan!"
-        )
+        await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, reklama/ssilka yuborish taqiqlangan!")
         return
-
-    # So'kinish
     sozlar = matndan_sozlar_olish(text)
     if any(s in UYATLI_SOZLAR for s in sozlar):
         try:
             await msg.delete()
         except:
             pass
-        await context.bot.send_message(
-            chat_id=msg.chat_id,
-            text=f"⚠️ {msg.from_user.first_name}, guruhda so‘kinish taqiqlangan!"
-        )
+        await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, guruhda so‘kinish taqiqlangan!")
         return
+
+async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    adder = msg.from_user
+    members = msg.new_chat_members or []
+    if not adder:
+        return
+    for m in members:
+        if adder.id != m.id:
+            FOYDALANUVCHI_HISOBI[adder.id] += 1
+    try:
+        await msg.delete()
+    except:
+        pass
 
 async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if MAJBUR_LIMIT <= 0:
@@ -442,7 +418,6 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
-# -------------------------- Bot command menus -----------------------------
 async def set_commands(app):
     await app.bot.set_my_commands(
         commands=[
@@ -465,12 +440,9 @@ async def set_commands(app):
         scope=BotCommandScopeAllPrivateChats()
     )
 
-# --------------------------------- Main -----------------------------------
 def main():
     start_web()
     app = ApplicationBuilder().token(TOKEN).build()
-
-    # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("id", id_berish))
@@ -486,29 +458,14 @@ def main():
     app.add_handler(CommandHandler("count", count_cmd))
     app.add_handler(CommandHandler("replycount", replycount))
     app.add_handler(CommandHandler("cleanuser", cleanuser))
-
-    # Callbacks
     app.add_handler(CallbackQueryHandler(on_set_limit, pattern=r"^set_limit:"))
     app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
-
-    # New members
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
-
-    # Filters: majbur first (higher priority), then others
-    media_filters = (
-        filters.TEXT |
-        filters.PHOTO |
-        filters.VIDEO |
-        filters.Document.ALL |
-        filters.ANIMATION |
-        filters.VOICE |
-        filters.VIDEO_NOTE
-    )
+    media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-1)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
-
     app.post_init = set_commands
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
