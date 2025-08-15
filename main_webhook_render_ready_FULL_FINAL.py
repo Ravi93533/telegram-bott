@@ -136,8 +136,7 @@ def has_suspicious_buttons(msg) -> bool:
 # ----------- Commands -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
-    await update.effective_message.reply_text(
-        "<b>Salom👋</b>\n"
+    await update.effective_message.reply_text( "<b>Salom👋</b>\n"
         "Men barcha reklamalarni, ssilkalani va kirdi chiqdi xabarlarni guruhlardan <b>o‘chirib</b> <b>turaman</b>\n\n"
 	"Profilingiz <b>ID</b> gizni aniqlab beraman\n\n"
 	"Majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman <b>➕<b>\n\n"
