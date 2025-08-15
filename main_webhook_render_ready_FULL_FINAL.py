@@ -1,4 +1,3 @@
-
 import threading
 import os
 import re
@@ -45,6 +44,16 @@ FOYDALANUVCHI_HISOBI = defaultdict(int)
 RUXSAT_USER_IDS = set()
 BLOK_VAQTLARI = {}  # (chat_id, user_id) -> until_datetime (UTC)
 
+# ✅ To'liq yozish ruxsatlari (guruh sozlamalari ruxsat bergan taqdirda)
+FULL_PERMS = ChatPermissions(
+    can_send_messages=True,
+    can_send_media_messages=True,
+    can_send_polls=True,
+    can_send_other_messages=True,
+    can_add_web_page_previews=True,
+    can_invite_users=True,
+)
+
 # So'kinish lug'ati
 UYATLI_SOZLAR = {"am", "ammisan", "ammislar", "ammislar?", "ammisizlar", "ammisizlar?", "amsan", "ammisan?", "amlar", "amlatta", "amyalaq", "amyalar", "amyaloq", "amxor", "am yaliman", "am yalayman", "am latta", "aminga", "aminga ske", "aminga sikay", "asshole", "bastard", "biyundiami", "bitch", "blyat", "buynami", "buyingdi omi", "buyingni ami", "buyundiomi", "dalbayob", "damn", "debil", 
     "dick", "dolboyob", "durak", "eblan", "fuck", "fakyou", "fuckyou", "foxisha", "fohisha", "fucker", "gandon", "gandonlar", "haromi", "haromilar", "horomi", "hoy", "idinnaxxuy", "idin naxuy", "idin naxxuy", 
@@ -52,7 +61,7 @@ UYATLI_SOZLAR = {"am", "ammisan", "ammislar", "ammislar?", "ammisizlar", "ammisi
     "lanati", "lax", "motherfucker", "mudak", "naxxuy", "og'zingaskay", "og'zinga skay", "ogzingaskay", "otti qotagi", "otni qotagi", "horomilar", 
     "otti qo'tag'i", "ogzinga skay", "onagniomi", "onangniami", "pashol naxuy", "padarlanat", "lanat", "pasholnaxxuy", "pidor", 
     "poshol naxxuy", "posholnaxxuy", "poxxuy", "poxuy", "qanjik", "qanjiq", "qonjiq", "qotaq", "qotaqxor", "qo'taq", "qo'taqxo'r", 
-    "qotagim", "kotagim", "qo'tag'im", "qotoqlar", "qo'toqlar", "qotag'im", "qotoglar", "qo'tog'lar", "qo'tagim", "sik", "sikaman", "skasizmi", "sikasizmi", "sikay", "sikalak", "sikish", "sikishish", "skay", 
+    "qotagim", "kotagim", "qo'tag'im", "qotoqlar", "qo'toqlar", "qotag'im", "qotoglar", "qo'tog'lar", "qotagim", "sik", "sikaman", "skasizmi", "sikasizmi", "sikay", "sikalak", "sikish", "sikishish", "skay", 
     "slut", "soska", "suka", "tashak", "tashaq", "toshoq", "toshok", "xaromi", "xoramilar", "xoromi", "xoromilar", "ам", "аммисан", "аммисан?", "амсан", "амлар", "амлатта", "аминга", "амялак", "амялок", "амхўр", "амхур", "омин", "оминга", "ам ялиман", "ам ялайман", "искирт", "жалап", 
     "далбаёб", "долбоёб", "гандон", "гондон", "нахуй", "иди нахуй", "идин наххуй", "идиннаххуй", "кот", "котак", "кутагим", "қўтағим",
     "кут", "кутмисан", "кутмислар", "кутмисизлар", "кутмисизлар?", "кутмисан?", "кутсан", "кўтсан", "кутак", "кутлар", "кутингга", "кўт", "кўтлар", "кўтингга", "ланати", "нахуй", "наххуй", "огзинга скай", "огзингаскай", "онагниоми", "онагни оми",
@@ -137,11 +146,11 @@ def has_suspicious_buttons(msg) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
     await update.effective_message.reply_text(
-		"<b>САЛОМ👋</b>\n"
+        "<b>САЛОМ👋</b>\n"
         "Мен барча рекламаларни, ссилкалани ва кирди чиқди хабарларни гуруҳлардан <b>ўчириб</b> <b>тураман</b>\n\n"
-	"Профилингиз <b>ID</b> гизни аниқлаб бераман\n\n"
-	"Мажбурий гурухга одам қўштираман ва каналга аъзо бўлдираман ➕\n\n"
-	"18+ уятли сўзларни ўчираман ва бошқа кўплаб ёрдамлар бераман 👨🏻‍✈\n\n"
+        "Профилингиз <b>ID</b> гизни аниқлаб бераман\n\n"
+        "Мажбурий гурухга одам қўштираман ва каналга аъзо бўлдираман ➕\n\n"
+        "18+ уятли сўзларни ўчираман ва бошқа кўплаб ёрдамлар бераман 👨🏻‍✈\n\n"
         "Бот командалари <b>қўлланмаси</b> 👉 /help\n\n"
         "Фақат Ишлашим учун гуруҳингизга қўшиб, <b>ADMIN</b> <b>беришингиз</b> <b>керак</b> 🙂\n\n"
         "Мурожаат учун👉 @Devona0107",
@@ -328,11 +337,15 @@ async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(KANAL_USERNAME, user_id)
         if member.status in ("member", "administrator", "creator"):
-            await context.bot.restrict_chat_member(
-                chat_id=q.message.chat.id,
-                user_id=user_id,
-                permissions=ChatPermissions(can_send_messages=True)
-            )
+            # ⬇️ To'liq ruxsat beramiz (guruh sozlamalari darajasida)
+            try:
+                await context.bot.restrict_chat_member(
+                    chat_id=q.message.chat.id,
+                    user_id=user_id,
+                    permissions=FULL_PERMS,
+                )
+            except Exception:
+                pass
             await q.edit_message_text("✅ A’zo bo‘lganingiz tasdiqlandi. Endi guruhda yozishingiz mumkin.")
         else:
             await q.edit_message_text("❌ Hali kanalga a’zo emassiz.")
@@ -354,11 +367,12 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await q.answer("Bu tugma siz uchun emas!", show_alert=True)
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if uid in RUXSAT_USER_IDS or (MAJBUR_LIMIT > 0 and cnt >= MAJBUR_LIMIT):
+        # ⬇️ To'liq ruxsatlar
         try:
             await context.bot.restrict_chat_member(
                 chat_id=q.message.chat.id,
                 user_id=uid,
-                permissions=ChatPermissions(can_send_messages=True)
+                permissions=FULL_PERMS,
             )
         except Exception:
             pass
@@ -575,7 +589,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         return
 
-    # 5 daqiqaga blok
+    # 5 daqiqaga blok (hozir 3 daqiqa)
     until = datetime.now(timezone.utc) + timedelta(minutes=3)
     BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
