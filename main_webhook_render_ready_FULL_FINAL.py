@@ -582,7 +582,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.restrict_chat_member(
             chat_id=msg.chat_id,
             user_id=uid,
-            permissions=ChatPermissions(can_send_messages=False),
+            permissions=ChatPermissions(can_send_messages=False, can_invite_users=True),
             until_date=until
         )
     except Exception as e:
