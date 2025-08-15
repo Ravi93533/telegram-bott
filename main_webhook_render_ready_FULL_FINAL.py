@@ -203,7 +203,8 @@ async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Noto‘g‘ri qiymat. Ruxsat etilgan oraliq: <b>3–25</b>. Masalan: <code>/majbur 10</code>", parse_mode="HTML")
     else:
         await update.message.reply_text(
-            "👥 Guruhda majburiy odam qo‘shishni nechta qilib belgilay? 👇\nQo‘shish shart emas — /majburoff",
+            "👥 Guruhda majburiy odam qo‘shishni nechta qilib belgilay? 👇
+Qo‘shish shart emas — /majburoff",
             reply_markup=majbur_klaviatura()
         )
 
@@ -246,7 +247,8 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = ["🏆 <b>Eng ko‘p odam qo‘shganlar</b> (TOP 100):"]
     for i, (uid, cnt) in enumerate(items, start=1):
         lines.append(f"{i}. <code>{uid}</code> — {cnt} ta")
-    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+    await update.message.reply_text("
+".join(lines), parse_mode="HTML")
 
 async def cleangroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
@@ -294,14 +296,17 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
         return
+    # Admin/owner/anonymous admin bypass
     if await is_privileged_message(msg, context.bot):
         return
     uid = msg.from_user.id
+    # Imtiyoz berilgan foydalanuvchi bypass
     if uid in RUXSAT_USER_IDS:
         return
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if cnt >= MAJBUR_LIMIT:
         return
+    # Yetarli odam qo'shmagan — xabarini o'chiramiz va eslatma
     try:
         await msg.delete()
     except:
@@ -330,6 +335,7 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    # grant tugmasini faqat admin bera olsin
     chat = q.message.chat if q.message else None
     user = q.from_user
     if not (chat and user):
@@ -352,7 +358,6 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     RUXSAT_USER_IDS.add(target_id)
     await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
 
-# ------------------ QOLGAN KOMANDALAR ------------------
 async def welcome_goodbye(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         try:
@@ -493,6 +498,7 @@ async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.delete()
     except:
         pass
+
 async def set_commands(app):
     await app.bot.set_my_commands(commands=[
         BotCommand("help", "Bot qo'llanmasi"),
@@ -557,6 +563,7 @@ def main():
         filters.VOICE |
         filters.VIDEO_NOTE
     )
+        app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-1)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter))
 
