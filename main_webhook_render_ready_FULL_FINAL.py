@@ -55,9 +55,13 @@ async def is_admin(update: Update) -> bool:
         return False
 
 async def is_privileged_message(msg, bot) -> bool:
+    """
+    Adminlar, guruh nomidan yozilgan xabarlar (sender_chat) va creatorlar uchun True qaytaradi.
+    """
     try:
         chat = msg.chat
         user = msg.from_user
+        # group-as-channel message
         if getattr(msg, "sender_chat", None) and msg.sender_chat.id == chat.id:
             return True
         if user:
@@ -83,6 +87,11 @@ def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
 UYATLI_SOZLAR = {"am","qotaq","kot","tashak","fuck","bitch","pidor","gandon","qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"}
+
+def add_to_group_kb(bot_username: str):
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{bot_username}?startgroup=start")]]
+    )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     FOYDALANUVCHILAR.add(update.effective_user.id)
@@ -325,54 +334,96 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
     msg = update.effective_message
     if not msg or not msg.chat or not msg.from_user:
         return
+    # Admin/creator/guruh nomidan xabarlar - teginmaymiz
     if await is_privileged_message(msg, context.bot):
         return
+    # Oq ro'yxat
     if msg.from_user.id in WHITELIST or (msg.from_user.username and msg.from_user.username in WHITELIST):
         return
+    # Tun rejimi
     if TUN_REJIMI:
         try:
             await msg.delete()
         except:
             pass
         return
+    # Kanal a'zoligi
     if not await kanal_tekshir(msg.from_user.id, context.bot):
         try:
             await msg.delete()
         except:
             pass
-        kb = [[InlineKeyboardButton("✅ Men a’zo bo‘ldim", callback_data="kanal_azo")]]
+        kb = [
+            [InlineKeyboardButton("✅ Men a’zo bo‘ldim", callback_data="kanal_azo")],
+            [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]
+        ]
         await context.bot.send_message(
             chat_id=msg.chat_id,
             text=f"⚠️ {msg.from_user.first_name}, siz {KANAL_USERNAME} kanalga a’zo emassiz!",
             reply_markup=InlineKeyboardMarkup(kb)
         )
         return
+
     text = msg.text or msg.caption or ""
     entities = msg.entities or msg.caption_entities or []
+
+    # ✅ BOTDAN KELGAN REKLAMA/HAVOLA/GAME-ni o'chirish
+    if getattr(msg.from_user, "is_bot", False):
+        has_game = bool(getattr(msg, "game", None))
+        has_url_entity = any(ent.type in ("text_link", "url", "mention") for ent in entities)
+        has_url_text = any(x in text for x in ("t.me","telegram.me","http://","https://","www.","youtu.be","youtube.com"))
+        if has_game or has_url_entity or has_url_text:
+            try:
+                await msg.delete()
+            except:
+                pass
+            await context.bot.send_message(
+                chat_id=msg.chat_id,
+                text="⚠️ Botlardan kelgan reklama/havola yoki game taqiqlangan!",
+                reply_markup=add_to_group_kb(context.bot.username)
+            )
+            return
+
+    # Yashirin yoki aniq ssilkalar
     for ent in entities:
         if ent.type in ("text_link", "url", "mention"):
             url = getattr(ent, "url", "") or ""
-            if url and ("t.me" in url or "telegram.me" in url):
+            if url and ("t.me" in url or "telegram.me" in url or "http://" in url or "https://" in url):
                 try:
                     await msg.delete()
                 except:
                     pass
-                await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, yashirin ssilka yuborish taqiqlangan!")
+                await context.bot.send_message(
+                    chat_id=msg.chat_id,
+                    text=f"⚠️ {msg.from_user.first_name}, yashirin ssilka yuborish taqiqlangan!",
+                    reply_markup=add_to_group_kb(context.bot.username)
+                )
                 return
+
     if any(x in text for x in ("t.me","telegram.me","@","www.","https://youtu.be","http://","https://")):
         try:
             await msg.delete()
         except:
             pass
-        await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, reklama/ssilka yuborish taqiqlangan!")
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text=f"⚠️ {msg.from_user.first_name}, reklama/ssilka yuborish taqiqlangan!",
+            reply_markup=add_to_group_kb(context.bot.username)
+        )
         return
+
+    # So'kinish
     sozlar = matndan_sozlar_olish(text)
     if any(s in UYATLI_SOZLAR for s in sozlar):
         try:
             await msg.delete()
         except:
             pass
-        await context.bot.send_message(chat_id=msg.chat_id, text=f"⚠️ {msg.from_user.first_name}, guruhda so‘kinish taqiqlangan!")
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text=f"⚠️ {msg.from_user.first_name}, guruhda so‘kinish taqiqlangan!",
+            reply_markup=add_to_group_kb(context.bot.username)
+        )
         return
 
 async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -410,7 +461,8 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
     kb = [
         [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")],
-        [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")]
+        [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
+        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]
     ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
@@ -463,7 +515,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
-    media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE)
+    media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE | filters.GAME)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-1)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
     app.post_init = set_commands
