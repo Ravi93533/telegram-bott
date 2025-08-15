@@ -137,14 +137,14 @@ def has_suspicious_buttons(msg) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
     await update.effective_message.reply_text(
-		"<b>Salom👋</b>\n"
-        "Men barcha reklamalarni, ssilkalani va kirdi chiqdi xabarlarni guruhlardan <b>o‘chirib</b> <b>turaman</b>\n\n"
-	"Profilingiz <b>ID</b> gizni aniqlab beraman\n\n"
-	"Majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman ➕\n\n"
-	"18+ uyatli so'zlarni o'chiraman va boshqa ko‘plab yordamlar beraman 👨🏻‍✈\n\n"
-        "Bot komandalari <b>qo'llanmasi</b> 👉 /help\n\n"
-        "Faqat Ishlashim uchun guruhingizga qo‘shib, <b>ADMIN</b> <b>berishingiz</b> <b>kerak</b> 🙂\n\n"
-        "Murojaat uchun👉 @Devona0107",
+		"<b>САЛОМ👋</b>\n"
+        "Мен барча рекламаларни, ссилкалани ва кирди чиқди хабарларни гуруҳлардан <b>ўчириб</b> <b>тураман</b>\n\n"
+	"Профилингиз <b>ID</b> гизни аниқлаб бераман\n\n"
+	"Мажбурий гурухга одам қўштираман ва каналга аъзо бўлдираман ➕\n\n"
+	"18+ уятли сўзларни ўчираман ва бошқа кўплаб ёрдамлар бераман 👨🏻‍✈\n\n"
+        "Бот командалари <b>қўлланмаси</b> 👉 /help\n\n"
+        "Фақат Ишлашим учун гуруҳингизга қўшиб, <b>ADMIN</b> <b>беришингиз</b> <b>керак</b> 🙂\n\n"
+        "Мурожаат учун👉 @Devona0107",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(kb)
     )
@@ -331,10 +331,7 @@ async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.restrict_chat_member(
                 chat_id=q.message.chat.id,
                 user_id=user_id,
-                permissions=ChatPermissions(
-                    can_send_messages=True, can_send_media_messages=True, can_send_polls=True,
-                    can_send_other_messages=True, can_add_web_page_previews=True, can_invite_users=True
-                )
+                permissions=ChatPermissions(can_send_messages=True)
             )
             await q.edit_message_text("✅ A’zo bo‘lganingiz tasdiqlandi. Endi guruhda yozishingiz mumkin.")
         else:
@@ -361,10 +358,7 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.restrict_chat_member(
                 chat_id=q.message.chat.id,
                 user_id=uid,
-                permissions=ChatPermissions(can_send_messages=True, can_send_media_messages=True,
-                                            can_send_polls=True, can_send_other_messages=True,
-                                            can_add_web_page_previews=True, can_change_info=False,
-                                            can_invite_users=True, can_pin_messages=False)
+                permissions=ChatPermissions(can_send_messages=True)
             )
         except Exception:
             pass
@@ -588,10 +582,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.restrict_chat_member(
             chat_id=msg.chat_id,
             user_id=uid,
-            permissions=ChatPermissions(can_send_messages=False, can_send_media_messages=False,
-                                        can_send_polls=False, can_send_other_messages=False,
-                                        can_add_web_page_previews=False, can_change_info=False,
-                                        can_invite_users=False, can_pin_messages=False),
+            permissions=ChatPermissions(can_send_messages=False),
             until_date=until
         )
     except Exception as e:
