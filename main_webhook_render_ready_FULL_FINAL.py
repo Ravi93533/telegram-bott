@@ -25,7 +25,7 @@ def home():
     return "Bot ishlayapti!"
 
 def run_web():
-    app_flask.run(host="0.0.0.0", port=8080)
+    app_flask.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")))
 
 def start_web():
     threading.Thread(target=run_web, daemon=True).start()
