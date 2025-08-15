@@ -43,6 +43,7 @@ KANAL_USERNAME = None
 MAJBUR_LIMIT = 0
 FOYDALANUVCHI_HISOBI = defaultdict(int)
 RUXSAT_USER_IDS = set()
+BLOK_VAQTLARI = {}  # (chat_id, user_id) -> until_datetime (UTC)
 
 # So'kinish lug'ati
 UYATLI_SOZLAR = {"am","qotaq","kot","tashak","fuck","bitch","pidor","gandon","qo'taq","ko't","sik","sikish","mudak","nahuy","naxxuy","pohuy"}
@@ -330,6 +331,18 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = q.from_user.id
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if uid in RUXSAT_USER_IDS or (MAJBUR_LIMIT > 0 and cnt >= MAJBUR_LIMIT):
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=q.message.chat.id,
+                user_id=uid,
+                permissions=ChatPermissions(can_send_messages=True, can_send_media_messages=True,
+                                            can_send_polls=True, can_send_other_messages=True,
+                                            can_add_web_page_previews=True, can_change_info=False,
+                                            can_invite_users=True, can_pin_messages=False)
+            )
+        except Exception:
+            pass
+        BLOK_VAQTLARI.pop((q.message.chat.id, uid), None)
         await q.edit_message_text("✅ Talab bajarilgan! Endi guruhda yozishingiz mumkin.")
     else:
         qoldi = max(MAJBUR_LIMIT - cnt, 0)
@@ -518,6 +531,17 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     uid = msg.from_user.id
+
+    # Agar foydalanuvchi hanuz blokda bo'lsa — xabarini o'chirib, hech narsa yubormaymiz
+    now = datetime.now(timezone.utc)
+    key = (msg.chat_id, uid)
+    until_old = BLOK_VAQTLARI.get(key)
+    if until_old and now < until_old:
+        try:
+            await msg.delete()
+        except:
+            pass
+        return
     if uid in RUXSAT_USER_IDS:
         return
 
@@ -533,6 +557,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 5 daqiqaga blok
     until = datetime.now(timezone.utc) + timedelta(minutes=5)
+    BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
         await context.bot.restrict_chat_member(
             chat_id=msg.chat_id,
@@ -552,7 +577,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")],
         [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
         [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")],
-        [InlineKeyboardButton(f"⏳ 5 daqiqaga bloklandi (gacha {until_str})", callback_data="noop")]
+        [InlineKeyboardButton("⏳ 5 daqiqaga bloklandi", callback_data="noop")]
     ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
