@@ -319,22 +319,37 @@ async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Tekshirishda xatolik. Kanal username noto‘g‘ri bo‘lishi yoki bot kanalga a’zo bo‘lmasligi mumkin.")
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = """📌 Buyruqlar ro‘yxati:
+    text = (
+        "📌 <b>Buyruqlar ro‘yxati</b>\n\n"
+        "🔹 <b>/id</b> - Акканунтингиз ID сини аниқлайди.\n"
+        "🔹 <b>/tun</b> - Барча ёзилган хабарлар автоматик ўчирилади.\n"
+        "🔹 <b>/tunoff</b> - Тун режими ўчирилади.\n"
+        "🔹 <b>/ruxsat</b> - Ответ ёки @ орқали белгиланган одамга рухсат берилади.\n"
+        "🔹 <b>/kanal @username</b> - Каналга азо бўлишга мажбурлайди.\n"
+        "🔹 <b>/kanaloff</b> - Каналга мажбур азо бўлишни ўчиради.\n"
+        "🔹 <b>/majbur [son]</b> — Majburiy odam qo‘shish limitini o‘rnatish (min 3, max 25). Agar son yozilmasa, menyu chiqadi.\n"
+        "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
+        "🔹 <b>/top</b> — Eng ko‘p qo‘shgan TOP 100.\n"
+        "🔹 <b>/cleangroup</b> — Hamma hisobini 0 qilish.\n"
+        "🔹 <b>/count</b> — Siz nechta odam qo‘shgansiz.\n"
+        "🔹 <b>/replycount</b> — Reply qilingan foydalanuvchi hisobi.\n"
+        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisobi 0.\n"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
 
-/id
-/count
-/top
-/replycount
-/majbur
-/majburoff
-/cleangroup
-/cleanuser
-/ruxsat
-/kanal
-/kanaloff
-/tun
-/tunoff"""
-    await update.effective_message.reply_text(text)
+
+# ------------------ MAJBUR KOMANDALARI BLOKI (qo'shildi) ------------------
+def majbur_klaviatura():
+    # Minimal 3, maksimal 25 — 10 ta tugma
+    rows = [
+        [3, 5, 7, 10, 12],
+        [15, 18, 20, 22, 25],
+    ]
+    keyboard = [[InlineKeyboardButton(str(n), callback_data=f"set_limit:{n}") for n in row] for row in rows]
+    keyboard.append([InlineKeyboardButton("❌ BEKOR QILISH ❌", callback_data="set_limit:cancel")])
+    return InlineKeyboardMarkup(keyboard)
+
+
 
 async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
@@ -556,22 +571,63 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = """📌 Buyruqlar ro‘yxati:
+    text = (
+        "🤖 <b>Bot qo'llanmasi</b>\n\n"
+        "🟢 <b>Umumiy komandalar</b>\n"
+        "/start — bot haqida qisqacha ma'lumot\n"
+        "/help — shu yordam oynasi\n"
+        "/id — sizning Telegram ID’ingiz\n"
+        "/count — siz nechta odam qo‘shgansiz\n"
+        "/top — TOP 100 ro‘yxati\n"
+        "/replycount — (reply) keltirilgan foydalanuvchi nechta qo‘shganini ko‘rish\n\n"
+        "🔐 <b>Admin komandalar</b>\n"
+        "/majbur — majburiy odam qo‘shish limitini tanlash (3–25)\n"
+        "/majburoff — majburiy qo‘shishni o‘chirish\n"
+        "/cleangroup — barcha hisoblarni 0 qilish\n"
+        "/cleanuser — (reply) foydalanuvchi hisobini 0 qilish\n"
+        "/ruxsat — (reply) imtiyoz berish (majburiy qo‘shishni chetlab o‘tish)\n"
+        "/kanal @username — majburiy kanalni sozlash\n"
+        "/kanaloff — majburiy kanal talabini o‘chirish\n"
+        "/tun — tun rejimini yoqish (oddiy foydalanuvchilarning xabari o‘chiriladi)\n"
+        "/tunoff — tun rejimini o‘chirish\n"
+        "/users — botdan foydalanganlar soni (agar mavjud bo‘lsa)\n"
+    )
+    await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
-/id
-/count
-/top
-/replycount
-/majbur
-/majburoff
-/cleangroup
-/cleanuser
-/ruxsat
-/kanal
-/kanaloff
-/tun
-/tunoff"""
-    await update.effective_message.reply_text(text)
+    await update.effective_message.reply_text(text, disable_web_page_preview=True)
+
+# Handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("help", help_cmd))
+app.add_handler(CommandHandler("majbur", majbur))
+app.add_handler(CallbackQueryHandler(on_set_limit, pattern="^set_limit:"))
+app.add_handler(CommandHandler("majburoff", majburoff))
+app.add_handler(CommandHandler("top", top_cmd))
+app.add_handler(CommandHandler("cleangroup", cleangroup))
+app.add_handler(CommandHandler("count", count_cmd))
+app.add_handler(CommandHandler("replycount", replycount))
+app.add_handler(CommandHandler("cleanuser", cleanuser))
+
+# Callback handlers for buttons
+app.add_handler(CallbackQueryHandler(on_check_added, pattern="^check_added$"))
+app.add_handler(CallbackQueryHandler(on_grant_priv, pattern="^grant:"))
+
+# New members (kirish)
+app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
+
+# Majburiy limit filter — barcha non-command xabarlar
+media_filters = (
+    filters.TEXT |
+    filters.PHOTO |
+    filters.VIDEO |
+    filters.Document.ALL |
+    filters.ANIMATION |
+    filters.VOICE |
+    filters.VIDEO_NOTE
+)
+app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter))
+
+# --------- Run ---------
 
 async def on_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
