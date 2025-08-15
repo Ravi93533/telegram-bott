@@ -151,20 +151,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "📌 <b>Buyruqlar ro‘yxati</b>\n\n"
-        "🔹 <b>/id</b> - Akkauntingiz ID ni ko‘rsatadi.\n"
-        "🔹 <b>/tun</b> — </b>Tun</b> rejimi(shu daqiqadan yozilganlar avtomatik o'chirilib turiladi).\n"
-        "🔹 <b>/tunoff</b> — </b>Tun</b> rejimini o‘chirish.\n"
-        "🔹 <b>/ruxsat</b> — (Ответит) orqali imtiyoz berish.\n"
-        "🔹 <b>/kanal @username</b> — Majburiy kanalga a'zo qilish.\n"
-        "🔹 <b>/kanaloff</b> — Majburiy kanalni o‘chirish.\n"
-        "🔹 <b>/majbur [3–25]</b> — Majburiy odam qo'shishni yoqisg.\n"
-        "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
-        "🔹 <b>/top</b> — TOP odam qo‘shganlar.\n"
-        "🔹 <b>/cleangroup</b> — Barcha odam qo'shganlar hisobini 0 qilish.\n"
-        "🔹 <b>/count</b> — O‘zingiz nechta qo‘shdingiz.\n"
-        "🔹 <b>/replycount</b> — (Ответит) qilingan foydalanuvchi qo'shgan odami soni.\n"
-        "🔹 <b>/cleanuser</b> — (Ответит) qilingan foydalanuvchi hisobini 0 qilish.\n"
+        "📌 <b>БУЙРУҚЛАР РЎЙХАТИ</b>\n\n"
+        "🔹 <b>/id</b> - Аккаунтингиз ID ни кўрсатади.\n"
+        "🔹 <b>/tun</b> — Тун режими(шу дақиқадан ёзилган хабарлар автоматик ўчирилиб турилади).\n"
+        "🔹 <b>/tunoff</b> — Тун режимини ўчириш.\n"
+        "🔹 <b>/ruxsat</b> — (Ответит) орқали имтиёз бериш.\n"
+        "🔹 <b>/kanal @username</b> — Мажбурий кўрсатилган каналга аъзо қилдириш.\n"
+        "🔹 <b>/kanaloff</b> — Мажбурий каналга аъзони ўчириш.\n"
+        "🔹 <b>/majbur [3–25]</b> — Гурухга мажбурий одам қўшишни ёқиш.\n"
+        "🔹 <b>/majburoff</b> — Мажбурий қўшишни ўчириш.\n"
+        "🔹 <b>/top</b> — TOP одам қўшганлар.\n"
+        "🔹 <b>/cleangroup</b> — Одам қўшганлар хисобини 0 қилиш.\n"
+        "🔹 <b>/count</b> — Ўзингиз нечта қўшдингиз.\n"
+        "🔹 <b>/replycount</b> — (Ответит) қилинган одам қўшганлар сони.\n"
+        "🔹 <b>/cleanuser</b> — (Ответит) қилинган одам қўшган хисобини 0 қилиш.\n"
     )
     await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
