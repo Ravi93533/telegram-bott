@@ -138,7 +138,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
     await update.effective_message.reply_text(
         "<b>Salom👋</b>\n"
-        "Men barcha reklamalarni, ssilkalani va kirdi chiqdi xabarlarni guruhlardan <b>o‘chirib</b> <b>turaman</b>, profilingiz <b>ID</b> gizni aniqlab beraman, majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman, 18+ uyatli so'zlarni o'chiraman va boshqa ko‘plab yordamlar beraman 👨🏻‍✈\n\n"
+        "Men barcha reklamalarni, ssilkalani va kirdi chiqdi xabarlarni guruhlardan <b>o‘chirib</b> <b>turaman</b>\n\n"
+	"Profilingiz <b>ID</b> gizni aniqlab beraman\n\n"
+	"Majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman <b>➕<b>\n\n"
+	"18+ uyatli so'zlarni o'chiraman va boshqa ko‘plab yordamlar beraman 👨🏻‍✈\n\n"
         "Bot komandalari <b>qo'llanmasi</b> 👉 /help\n\n"
         "Faqat Ishlashim uchun guruhingizga qo‘shib, <b>ADMIN</b> <b>berishingiz</b> <b>kerak</b> 🙂\n\n"
         "Murojaat uchun👉 @Devona0107",
@@ -149,19 +152,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📌 <b>Buyruqlar ro‘yxati</b>\n\n"
-        "🔹 <b>/id</b> - ID ni ko‘rsatadi.\n"
-        "🔹 <b>/tun</b> — Tun rejimini yoqish.\n"
-        "🔹 <b>/tunoff</b> — Tun rejimini o‘chirish.\n"
-        "🔹 <b>/ruxsat</b> — Reply orqali imtiyoz berish.\n"
-        "🔹 <b>/kanal @username</b> — Majburiy kanal sozlash.\n"
+        "🔹 <b>/id</b> - Akkauntingiz ID ni ko‘rsatadi.\n"
+        "🔹 <b>/tun</b> — </b>Tun</b> rejimini yoqish(barchaning yozganlari avtomatik o'chirilib turiladi).\n"
+        "🔹 <b>/tunoff</b> — </b>Tun</b> rejimini o‘chirish.\n"
+        "🔹 <b>/ruxsat</b> — Reply(Ответит) orqali imtiyoz berish.\n"
+        "🔹 <b>/kanal @username</b> — Majburiy kanalga a'zo qilish(@sername kanalingiz nomi).\n"
         "🔹 <b>/kanaloff</b> — Majburiy kanalni o‘chirish.\n"
-        "🔹 <b>/majbur [3–25]</b> — Majburiy odam limiti. Son bo‘lmasa menyu chiqadi.\n"
+        "🔹 <b>/majbur [3–25]</b> — Majburiy odam qo'shish. Son bo‘lmasa menyu chiqadi.\n"
         "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
-        "🔹 <b>/top</b> — TOP 100 qo‘shganlar.\n"
-        "🔹 <b>/cleangroup</b> — Barcha hisoblarni 0 qilish.\n"
+        "🔹 <b>/top</b> — TOP 100 odam qo‘shganlar.\n"
+        "🔹 <b>/cleangroup</b> — Barcha odam qo'shganlar hisoblarini 0 qilish.\n"
         "🔹 <b>/count</b> — O‘zingiz nechta qo‘shdingiz.\n"
-        "🔹 <b>/replycount</b> — Reply qilingan foydalanuvchi hisobi.\n"
-        "🔹 <b>/cleanuser</b> — Reply qilingan foydalanuvchi hisobini 0 qilish.\n"
+        "🔹 <b>/replycount</b> — Reply(Ответит) qilingan foydalanuvchi qo'shgan odami soni.\n"
+        "🔹 <b>/cleanuser</b> — Reply(Ответит) qilingan foydalanuvchi hisobini 0 qilish.\n"
     )
     await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
