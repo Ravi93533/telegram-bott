@@ -461,6 +461,38 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
+
+async def tun(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global TUN_REJIMI
+    if not await is_admin(update):
+        await update.message.reply_text("⛔ Bu komanda faqat adminlar uchun.")
+        return
+    TUN_REJIMI = True
+    await update.message.reply_text("🌙 Tun rejimi yoqildi. Endi barcha xabarlar o‘chiriladi (admin/creator bundan mustasno).")
+
+
+async def tunoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global TUN_REJIMI
+    if not await is_admin(update):
+        await update.message.reply_text("⛔ Bu komanda faqat adminlar uchun.")
+        return
+    TUN_REJIMI = False
+    await update.message.reply_text("🌤 Tun rejimi o‘chirildi.")
+
+
+async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    adder = msg.from_user  # qo'shgan shaxs
+    members = msg.new_chat_members or []
+    if not adder:
+        return
+    for m in members:
+        if adder.id != m.id:
+            FOYDALANUVCHI_HISOBI[adder.id] += 1
+    try:
+        await msg.delete()
+    except:
+        pass
 async def set_commands(app):
     await app.bot.set_my_commands(commands=[
         BotCommand("help", "Bot qo'llanmasi"),
