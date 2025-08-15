@@ -540,42 +540,53 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "🤖 Bot qo'llanmasi\n\n"
-        "🧑‍💻 Umumiy komandalar:\n"
-        "/help — ushbu menyu\n"
-        "/id — foydalanuvchi ID\n"
+        "🤖 <b>Bot qo'llanmasi</b>\n\n"
+        "🟢 <b>Umumiy komandalar</b>\n"
+        "/start — bot haqida qisqacha ma'lumot\n"
+        "/help — shu yordam oynasi\n"
+        "/id — sizning Telegram ID’ingiz\n"
         "/count — siz nechta odam qo‘shgansiz\n"
         "/top — TOP 100 ro‘yxati\n"
-        "/replycount — (reply) o‘sha foydalanuvchi nechta qo‘shganini ko‘rish\n\n"
-        "🛡 Admin komandalar:\n"
+        "/replycount — (reply) keltirilgan foydalanuvchi nechta qo‘shganini ko‘rish\n\n"
+        "🔐 <b>Admin komandalar</b>\n"
         "/majbur — majburiy odam qo‘shish limitini tanlash (3–25)\n"
         "/majburoff — majburiy qo‘shishni o‘chirish\n"
         "/cleangroup — barcha hisoblarni 0 qilish\n"
         "/cleanuser — (reply) foydalanuvchi hisobini 0 qilish\n"
-        "/ruxsat — (reply) imtiyoz berish\n"
-        "/kanal — majburiy kanalni sozlash\n"
-        "/kanaloff — majburiy kanalni o‘chirish\n"
-        "/tun — tun rejimi\n"
+        "/ruxsat — (reply) imtiyoz berish (majburiy qo‘shishni chetlab o‘tish)\n"
+        "/kanal @username — majburiy kanalni sozlash\n"
+        "/kanaloff — majburiy kanal talabini o‘chirish\n"
+        "/tun — tun rejimini yoqish (oddiy foydalanuvchilarning xabari o‘chiriladi)\n"
         "/tunoff — tun rejimini o‘chirish\n"
+        "/users — botdan foydalanganlar soni (agar mavjud bo‘lsa)\n"
     )
+    await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
     await update.effective_message.reply_text(text, disable_web_page_preview=True)
 
 # Handlers
@@ -786,16 +797,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -987,16 +1004,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1179,16 +1202,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1357,16 +1386,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1526,16 +1561,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1685,16 +1726,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1832,16 +1879,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -1966,16 +2019,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -2085,16 +2144,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -2171,16 +2236,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -2245,16 +2316,22 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --------- Bot komandalarini o'rnatish ---------
 async def set_commands(app):
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("id", "Sizning ID’ingiz"),
         BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
+        BotCommand("tun", "Tun rejimini yoqish"),
+        BotCommand("tunoff", "Tun rejimini o‘chirish"),
+], scope=BotCommandScopeAllPrivateChats())
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
@@ -2383,22 +2460,22 @@ async def tunoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌤 Tun rejimi o‘chirildi.")
 
 async def set_commands():
-    await app.bot.set_my_commands(commands=[
+    await app.bot.set_my_commands(commands=[        BotCommand("start", "Bot haqida ma'lumot"),
         BotCommand("help", "Bot qo'llanmasi"),
-        BotCommand("id", "Sizning ID’ingizni ko‘rsatadi"),
+        BotCommand("id", "Sizning ID’ingiz"),
+        BotCommand("count", "Siz nechta qo‘shgansiz"),
+        BotCommand("top", "TOP 100 ro‘yxati"),
+        BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
+        BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
+        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
+        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
+        BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
+        BotCommand("ruxsat", "(reply) imtiyoz berish"),
+        BotCommand("kanal", "Majburiy kanalni sozlash"),
+        BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
         BotCommand("tun", "Tun rejimini yoqish"),
         BotCommand("tunoff", "Tun rejimini o‘chirish"),
-        BotCommand("kanal", "Majburiy kanalga a'zo bo'lish"),
-        BotCommand("kanaloff", "Majburiy kanalga a'zo bo'lishni o'chirish"),
-        BotCommand("ruxsat", "Odamga barcha ruxsatlar berish"),
-        BotCommand("majbur", "Majburiy odam qo‘shish limitini o‘rnatish (3–25)"),
-        BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-        BotCommand("top", "TOP 100 ro‘yxati"),
-        BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
-        BotCommand("count", "Siz nechta qo‘shgansiz"),
-        BotCommand("replycount", "Reply qilinganni hisobini ko‘rish"),
-        BotCommand("cleanuser", "Reply qilinganni hisobini 0 qilish"),
-    ], scope=BotCommandScopeAllPrivateChats())
+], scope=BotCommandScopeAllPrivateChats())
 
 async def botni_ishga_tushur():
     await set_commands()
