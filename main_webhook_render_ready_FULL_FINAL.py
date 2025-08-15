@@ -330,6 +330,30 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     RUXSAT_USER_IDS.add(target_id)
     await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
 
+SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
+SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
+
+def has_suspicious_buttons(msg) -> bool:
+    try:
+        kb = msg.reply_markup.inline_keyboard if msg.reply_markup else []
+        for row in kb:
+            for btn in row:
+                # url, web_app or callback_game buttons indicate game/ad
+                if getattr(btn, "callback_game", None) is not None:
+                    return True
+                u = getattr(btn, "url", "") or ""
+                if u:
+                    low = u.lower()
+                    if any(dom in low for dom in SUSPECT_DOMAINS) or any(x in low for x in ("game", "play", "tgme")):
+                        return True
+                wa = getattr(btn, "web_app", None)
+                if wa and getattr(wa, "url", None):
+                    if any(dom in wa.url.lower() for dom in SUSPECT_DOMAINS):
+                        return True
+        return False
+    except Exception:
+        return False
+
 async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg or not msg.chat or not msg.from_user:
@@ -366,6 +390,46 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
 
     text = msg.text or msg.caption or ""
     entities = msg.entities or msg.caption_entities or []
+
+    # 🚫 Inline bot orqali kelgan (via @BotName) — ko'pincha game reklama
+    if getattr(msg, "via_bot", None):
+        try:
+            await msg.delete()
+        except:
+            pass
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text="⚠️ Inline bot orqali yuborilgan reklama taqiqlangan!",
+            reply_markup=add_to_group_kb(context.bot.username)
+        )
+        return
+
+    # 🚫 Tugmalarda game/web-app/URL bo'lsa — blok
+    if has_suspicious_buttons(msg):
+        try:
+            await msg.delete()
+        except:
+            pass
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text="⚠️ O‘yin/veb-app tugmali reklama taqiqlangan!",
+            reply_markup=add_to_group_kb(context.bot.username)
+        )
+        return
+
+    # 🐱 Cattea/Gamee va o‘xshash game postlarini matndan aniqlash
+    low = text.lower()
+    if any(k in low for k in SUSPECT_KEYWORDS):
+        try:
+            await msg.delete()
+        except:
+            pass
+        await context.bot.send_message(
+            chat_id=msg.chat_id,
+            text="⚠️ O‘yin reklamalari taqiqlangan!",
+            reply_markup=add_to_group_kb(context.bot.username)
+        )
+        return
 
     # ✅ BOTDAN KELGAN REKLAMA/HAVOLA/GAME-ni o'chirish
     if getattr(msg.from_user, "is_bot", False):
