@@ -553,6 +553,30 @@ async def set_commands(app):
 
 # --------- App ---------
 app = ApplicationBuilder().token(TOKEN).build()
+from telegram import Update
+from telegram.ext import ContextTypes
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "🤖 Bot qo'llanmasi\n\n"
+        "🧑‍💻 Umumiy komandalar:\n"
+        "/help — ushbu menyu\n"
+        "/id — foydalanuvchi ID\n"
+        "/count — siz nechta odam qo‘shgansiz\n"
+        "/top — TOP 100 ro‘yxati\n"
+        "/replycount — (reply) o‘sha foydalanuvchi nechta qo‘shganini ko‘rish\n\n"
+        "🛡 Admin komandalar:\n"
+        "/majbur — majburiy odam qo‘shish limitini tanlash (3–25)\n"
+        "/majburoff — majburiy qo‘shishni o‘chirish\n"
+        "/cleangroup — barcha hisoblarni 0 qilish\n"
+        "/cleanuser — (reply) foydalanuvchi hisobini 0 qilish\n"
+        "/ruxsat — (reply) imtiyoz berish\n"
+        "/kanal — majburiy kanalni sozlash\n"
+        "/kanaloff — majburiy kanalni o‘chirish\n"
+        "/tun — tun rejimi\n"
+        "/tunoff — tun rejimini o‘chirish\n"
+    )
+    await update.effective_message.reply_text(text, disable_web_page_preview=True)
 
 # Handlers
 app.add_handler(CommandHandler("start", start))
