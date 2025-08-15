@@ -346,6 +346,15 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
+    # faqat ogohlantirish olgan egasi bosa oladi
+    data = q.data
+    if ":" in data:
+        try:
+            owner_id = int(data.split(":", 1)[1])
+        except ValueError:
+            owner_id = None
+        if owner_id and owner_id != uid:
+            return await q.answer("Bu tugma siz uchun emas!", show_alert=True)
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if uid in RUXSAT_USER_IDS or (MAJBUR_LIMIT > 0 and cnt >= MAJBUR_LIMIT):
         try:
@@ -573,7 +582,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 5 daqiqaga blok
-    until = datetime.now(timezone.utc) + timedelta(minutes=5)
+    until = datetime.now(timezone.utc) + timedelta(minutes=3)
     BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
         await context.bot.restrict_chat_member(
@@ -591,10 +600,10 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
     until_str = until.strftime('%H:%M')
     kb = [
-        [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data="check_added")],
+        [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data=f"check_added:{uid}")],
         [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
         [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")],
-        [InlineKeyboardButton("⏳ 5 daqiqaga bloklandi", callback_data="noop")]
+        [InlineKeyboardButton("⏳ 3 daqiqaga bloklandi", callback_data="noop")]
     ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
@@ -648,7 +657,7 @@ def main():
     # Callbacks
     app.add_handler(CallbackQueryHandler(on_set_limit, pattern=r"^set_limit:"))
     app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
-    app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added$"))
+    app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added(?::\d+)?$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
     app.add_handler(CallbackQueryHandler(lambda u,c: u.callback_query.answer(""), pattern=r"^noop$"))
 
