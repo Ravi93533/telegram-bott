@@ -136,10 +136,11 @@ def has_suspicious_buttons(msg) -> bool:
 # ----------- Commands -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")]]
-    await update.effective_message.reply_text( "<b>Salom👋</b>\n"
+    await update.effective_message.reply_text(
+		"<b>Salom👋</b>\n"
         "Men barcha reklamalarni, ssilkalani va kirdi chiqdi xabarlarni guruhlardan <b>o‘chirib</b> <b>turaman</b>\n\n"
 	"Profilingiz <b>ID</b> gizni aniqlab beraman\n\n"
-	"Majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman <b>➕<b>\n\n"
+	"Majburiy guruxga odam qo'shtiraman va kanalga a'zo bo‘ldiraman ➕\n\n"
 	"18+ uyatli so'zlarni o'chiraman va boshqa ko‘plab yordamlar beraman 👨🏻‍✈\n\n"
         "Bot komandalari <b>qo'llanmasi</b> 👉 /help\n\n"
         "Faqat Ishlashim uchun guruhingizga qo‘shib, <b>ADMIN</b> <b>berishingiz</b> <b>kerak</b> 🙂\n\n"
@@ -155,7 +156,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔹 <b>/tun</b> — </b>Tun</b> rejimi(shu daqiqadan yozilganlar avtomatik o'chirilib turiladi).\n"
         "🔹 <b>/tunoff</b> — </b>Tun</b> rejimini o‘chirish.\n"
         "🔹 <b>/ruxsat</b> — (Ответит) orqali imtiyoz berish.\n"
-        "🔹 <b>/kanal @username</b> — Majburiy kanalga a'zo qilish(@sername kanalingiz nomi).\n"
+        "🔹 <b>/kanal @username</b> — Majburiy kanalga a'zo qilish.\n"
         "🔹 <b>/kanaloff</b> — Majburiy kanalni o‘chirish.\n"
         "🔹 <b>/majbur [3–25]</b> — Majburiy odam qo'shishni yoqisg.\n"
         "🔹 <b>/majburoff</b> — Majburiy qo‘shishni o‘chirish.\n"
