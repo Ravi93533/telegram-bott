@@ -2268,6 +2268,36 @@ app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter
 
 # --------- Run ---------
 
+
+# ------------------ HELP KOMANDASI ------------------
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines = [
+        "🤖 <b>Bot qo'llanmasi</b>",
+        "",
+        "🧑‍💻 <b>Umumiy komandalar</b>:",
+        "/help — ushbu menyu",
+        "/id — foydalanuvchi ID",
+        "/count — siz nechta odam qo‘shgansiz",
+        "/top — TOP 100 ro‘yxati",
+        "/replycount — (reply qilib) o‘sha foydalanuvchi nechta qo‘shganini ko‘rish",
+        "",
+        "🛡 <b>Admin komandalar</b>:",
+        "/majbur — majburiy odam qo‘shish limitini tanlash (3–25)",
+        "/majburoff — majburiy qo‘shishni o‘chirish",
+        "/cleangroup — barcha hisoblarni 0 qilish",
+        "/cleanuser — (reply qilib) foydalanuvchi hisobini 0 qilish",
+        "/ruxsat — (reply qilib) foydalanuvchiga imtiyoz berish",
+        "/kanal — majburiy kanalni sozlash",
+        "/kanaloff — majburiy kanalni o‘chirish",
+        "/tun — tun rejimini yoqish",
+        "/tunoff — tun rejimini o‘chirish",
+    ]
+    try:
+        await update.message.reply_html("\n".join(lines), disable_web_page_preview=True)
+    except Exception:
+        # Ba'zida edited_message/contextdan kelishi mumkin
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="\n".join([l.replace("<b>","").replace("</b>","") for l in lines]))
+
 # ------------------ APP va HANDLERLAR ------------------
 
 app = ApplicationBuilder().token(TOKEN).build()
