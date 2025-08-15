@@ -579,13 +579,38 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     until = datetime.now(timezone.utc) + timedelta(minutes=3)
     BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
-        await context.bot.restrict_chat_member(
-            chat_id=msg.chat_id,
-            user_id=uid,
-            permissions=ChatPermissions(can_send_messages=False, can_invite_users=True),
-            until_date=until
-        )
-    except Exception as e:
+        
+# Build permissions that keep chat defaults and only block sending
+chat_obj = await context.bot.get_chat(msg.chat_id)
+base_perm = getattr(chat_obj, "permissions", None)
+if base_perm is None:
+    base_perm = ChatPermissions(can_invite_users=True)
+
+perm_block = ChatPermissions(
+    can_send_messages=False,
+    can_send_audios=getattr(base_perm, "can_send_audios", None),
+    can_send_documents=getattr(base_perm, "can_send_documents", None),
+    can_send_photos=getattr(base_perm, "can_send_photos", None),
+    can_send_videos=getattr(base_perm, "can_send_videos", None),
+    can_send_video_notes=getattr(base_perm, "can_send_video_notes", None),
+    can_send_voice_notes=getattr(base_perm, "can_send_voice_notes", None),
+    can_send_polls=getattr(base_perm, "can_send_polls", None),
+    can_send_other_messages=getattr(base_perm, "can_send_other_messages", None),
+    can_add_web_page_previews=getattr(base_perm, "can_add_web_page_previews", None),
+    can_change_info=getattr(base_perm, "can_change_info", None),
+    can_invite_users=getattr(base_perm, "can_invite_users", None),
+    can_pin_messages=getattr(base_perm, "can_pin_messages", None),
+    can_manage_topics=getattr(base_perm, "can_manage_topics", None),
+)
+
+await context.bot.restrict_chat_member(
+    chat_id=msg.chat_id,
+    user_id=uid,
+    permissions=perm_block,
+    until_date=until,
+    use_independent_chat_permissions=True,
+)
+except Exception as e:
         log.warning(f"Restrict failed: {e}")
 
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
