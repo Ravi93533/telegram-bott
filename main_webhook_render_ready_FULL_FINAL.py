@@ -1,3 +1,4 @@
+from telegram.constants import ChatMemberStatus
 import threading
 import os
 import re
@@ -11,7 +12,7 @@ from telegram import (
     Update, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions,
     InlineKeyboardButton, InlineKeyboardMarkup
 )
-from telegram.ext import (
+from telegram.ext import (, ChatMemberHandler
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
@@ -713,3 +714,28 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        st = update.my_chat_member.new_chat_member.status
+    except Exception:
+        return
+    # If bot is only a member/restricted, ask to promote to admin
+    if st in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED):
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(
+            '🔐 Botni admin qilish', url=admin_add_link((await context.bot.get_me()).username)
+        )]])
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=(
+                    '⚠️ Bot hozircha *admin emas*.\n'
+                    'Iltimos, pastdagi tugma orqali admin qiling, shunda barcha funksiyalar to\'liq ishlaydi.'
+                ),
+                reply_markup=kb,
+                parse_mode='Markdown'
+            )
+        except Exception:
+            pass
+
