@@ -137,9 +137,22 @@ async def kanal_tekshir(user_id: int, bot) -> bool:
 def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
+def admin_add_link(bot_username: str) -> str:
+    # Telegram deep-link: request admin rights when adding to a group
+    rights = [
+        "delete_messages",
+        "restrict_members",
+        "invite_users",
+        "pin_messages",
+        "manage_video_chats",
+        "change_info",
+    ]
+    rights_param = "+".join(rights)
+    return f"https://t.me/{bot_username}?startgroup=true&admin={rights_param}"
+
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{bot_username}?startgroup=start")]]
+        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(bot_username))]]
     )
 
 def has_suspicious_buttons(msg) -> bool:
@@ -627,7 +640,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data=f"check_added:{uid}")],
         [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
-        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=f"https://t.me/{context.bot.username}?startgroup=start")],
+        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(context.bot.username))],
         [InlineKeyboardButton("⏳ 3 daqiqaga bloklandi", callback_data="noop")]
     ]
     await context.bot.send_message(
