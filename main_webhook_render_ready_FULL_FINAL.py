@@ -138,17 +138,20 @@ def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
 def admin_add_link(bot_username: str) -> str:
-    # Telegram deep-link: request admin rights when adding to a group
+    """Generate a deep-link that opens 'Add as admin' dialog for groups.
+    Format per Telegram docs: t.me/<bot>?startgroup&admin=<perm+perm>
+    """
     rights = [
-        "delete_messages",
-        "restrict_members",
-        "invite_users",
-        "pin_messages",
-        "manage_video_chats",
-        "change_info",
+        'delete_messages',
+        'restrict_members',
+        'invite_users',
+        'pin_messages',
+        'manage_topics',
+        'manage_video_chats',
+        'manage_chat',
     ]
-    rights_param = "+".join(rights)
-    return f"https://t.me/{bot_username}?startgroup=true&admin={rights_param}"
+    rights_param = '+'.join(rights)
+    return f"https://t.me/{bot_username}?startgroup&admin={rights_param}"
 
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
