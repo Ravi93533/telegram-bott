@@ -1,5 +1,8 @@
 from telegram import (
     Update,
+    BotCommand,
+    BotCommandScopeAllPrivateChats,
+    ChatPermissions,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
