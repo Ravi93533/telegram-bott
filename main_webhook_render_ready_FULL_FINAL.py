@@ -1,4 +1,19 @@
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.constants import ChatMemberStatus
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ChatMemberHandler,
+    ContextTypes,
+    filters,
+)
+
 import threading
 import os
 import re
@@ -8,11 +23,9 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask
 
-from telegram import (
     Update, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions,
     InlineKeyboardButton, InlineKeyboardMarkup
 )
-from telegram.ext import (, ChatMemberHandler
     ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
@@ -738,4 +751,4 @@ async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-
+# TODO: Register safety handler: app.add_handler(ChatMemberHandler(on_my_status, ChatMemberHandler.MY_CHAT_MEMBER))
