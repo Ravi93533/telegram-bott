@@ -19,13 +19,6 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask
 
-    Update, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions,
-    InlineKeyboardButton, InlineKeyboardMarkup
-)
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
-)
-
 # ----------- Small keep-alive web server -----------
 app_flask = Flask(__name__)
 
