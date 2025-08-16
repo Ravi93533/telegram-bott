@@ -671,9 +671,16 @@ def main():
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added:"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
 
-    # Filters
-    media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT |
-                     filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE)
+    # Filters (PTB v20+: use ATTACHMENT instead of DOCUMENT)
+    media_filters = (
+        filters.TEXT
+        | filters.PHOTO
+        | filters.VIDEO
+        | filters.ANIMATION
+        | filters.VOICE
+        | filters.VIDEO_NOTE
+        | filters.ATTACHMENT
+    )
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
     app.add_handler(ChatMemberHandler(on_new_members, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter))
