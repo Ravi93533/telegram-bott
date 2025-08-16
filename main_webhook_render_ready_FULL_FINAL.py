@@ -8,7 +8,7 @@ def admin_add_link(bot_username: str) -> str:
         'pin_messages','manage_topics','manage_video_chats','manage_chat'
     ]
     rights_param = '+'.join(rights)
-    return f\"https://t.me/{bot_username}?startgroup&admin={rights_param}\"
+    return f"https://t.me/{bot_username}?startgroup&admin={rights_param}"
 
 import threading
 import os
