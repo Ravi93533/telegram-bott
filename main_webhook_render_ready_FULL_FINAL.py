@@ -142,7 +142,7 @@ def matndan_sozlar_olish(matn: str):
 
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(context.bot.username))]]
+        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(bot_username))]]
     )
 
 def has_suspicious_buttons(msg) -> bool:
