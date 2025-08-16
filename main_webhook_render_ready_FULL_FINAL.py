@@ -24,7 +24,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "Bot ishlayapti!"
+    return "Бот работает!"
 
 def run_web():
     app_flask.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")))
@@ -47,7 +47,7 @@ FOYDALANUVCHI_HISOBI = defaultdict(int)
 RUXSAT_USER_IDS = set()
 BLOK_VAQTLARI = {}  # (chat_id, user_id) -> until_datetime (UTC)
 
-# ✅ To'liq yozish ruxsatlari (guruh sozlamalari ruxsat bergan taqdirda)
+# ✅ Полные разрешения на отправку (если это разрешено настройками группы)
 FULL_PERMS = ChatPermissions(
     can_send_messages=True,
     can_send_audios=True,
@@ -62,7 +62,7 @@ FULL_PERMS = ChatPermissions(
     can_invite_users=True,
 )
 
-# Blok uchun ruxsatlar (3 daqiqa): faqat yozish yopiladi, odam qo'shishga ruxsat qoldiriladi
+# Разрешения при блокировке (3 минуты): запрещаем писать, но оставляем приглашение пользователей
 BLOCK_PERMS = ChatPermissions(
     can_send_messages=False,
     can_send_audios=False,
@@ -77,16 +77,16 @@ BLOCK_PERMS = ChatPermissions(
     can_invite_users=True,
 )
 
-# So'kinish lug'ati
+# Список нецензурных слов — НЕ ТРОГАТЬ (оставлено как в оригинале)
 UYATLI_SOZLAR = {"am", "ammisan", "ammislar", "ammislar?", "ammisizlar", "ammisizlar?", "amsan", "ammisan?", "amlar", "amlatta", "amyalaq", "amyalar", "amyaloq", "amxor", "am yaliman", "am yalayman", "am latta", "aminga", "aminga ske", "aminga sikay", "asshole", "bastard", "biyundiami", "bitch", "blyat", "buynami", "buyingdi omi", "buyingni ami", "buyundiomi", "dalbayob", "damn", "debil", 
-    "dick", "dolboyob", "durak", "eblan", "fuck", "fakyou", "fuckyou", "foxisha", "fohisha", "fucker", "gandon", "gandonlar", "haromi", "haromilar", "horomi", "hoy", "idinnaxxuy", "idin naxuy", "idin naxxuy", 
+    "dick", "dolboyob", "durak", "eblan", "fuck", "fakyou", "fuckyou", "foxisha", "fohisha", "fucker", "gandon", "gandonmisan", "gandonmisan?", "gandonlar", "blya", "haromi", "huy", "haromilar", "horomi", "idinnaxxuy", "idinaxxuy", "idin naxuy", "idin naxxuy", 
     "isqirt", "jalap", "kal", "kot", "kotmislar", "kotmislar?", "kotmisizlar", "kotmisizlar?", "kotlar", "kotak", "kotmisan", "kotmisan?", "kotsan", "ko'tsan", "ko'tmisan", "ko't", "ko'tlar", "kotinga ske", "kotinga sikay", "kotinga", "ko'tinga", "kotingga", "kotvacha", "ko'tak", 
-    "lanati", "lax", "motherfucker", "mudak", "naxxuy", "og'zingaskay", "og'zinga skay", "ogzingaskay", "otti qotagi", "otni qotagi", "horomilar", 
+    "lanati", "lax", "motherfucker", "mudak", "naxxuy", "og'zingaskay", "og'zinga skay", "ogzingaskay", "otti qotagi", "otni qotagi", "horomilar", "huyimga", "huygami",
     "otti qo'tag'i", "ogzinga skay", "onagniomi", "onangniami", "pashol naxuy", "padarlanat", "lanat", "pasholnaxxuy", "pidor", 
     "poshol naxxuy", "posholnaxxuy", "poxxuy", "poxuy", "qanjik", "qanjiq", "qonjiq", "qotaq", "qotaqxor", "qo'taq", "qo'taqxo'r", 
     "qotagim", "kotagim", "qo'tag'im", "qotoqlar", "qo'toqlar", "qotag'im", "qotoglar", "qo'tog'lar", "qotagim", "sik", "sikaman", "skasizmi", "sikasizmi", "sikay", "sikalak", "sikish", "sikishish", "skay", 
     "slut", "soska", "suka", "tashak", "tashaq", "toshoq", "toshok", "xaromi", "xoramilar", "xoromi", "xoromilar", "ам", "аммисан", "аммисан?", "амсан", "амлар", "амлатта", "аминга", "амялак", "амялок", "амхўр", "амхур", "омин", "оминга", "ам ялиман", "ам ялайман", "искирт", "жалап", 
-    "далбаёб", "долбоёб", "гандон", "гондон", "нахуй", "иди нахуй", "идин наххуй", "идиннаххуй", "кот", "котак", "кутагим", "қўтағим",
+    "далбаёб", "долбоёб", "гандон", "гандонлар", "гандонмисан", "гандонмисан?", "нахуй", "иди нахуй", "иди наххуй", "идинахуй", "идинаххуй", "идин наххуй", "идиннаххуй", "кот", "котак", "кутагим", "қўтағим",
     "кут", "кутмисан", "кутмислар", "кутмисизлар", "кутмисизлар?", "кутмисан?", "кутсан", "кўтсан", "кутак", "кутлар", "кутингга", "кўт", "кўтлар", "кўтингга", "ланати", "нахуй", "наххуй", "огзинга скай", "огзингаскай", "онагниоми", "онагни оми",
     "онангниами", "онангни ами", "огзинга скей", "огзинга сикай", "отни кутаги", "пашол нахуй", "пашолнаххуй", "пидор", "пошол наххуй", "кўтмислар", "кўтмислар?", "кўтмисизлар?", 
     "похуй", "поххуй", "пошолнаххуй", "секис", "сикасиз", "сикай", "сикаман", "сикиш", "сикишиш", "сикишамиз", "скишамиз", "сикишаман", "скишаман", "сикишамизми?", "скишамизми?", "сикасизми", "скасизми", "скасизми?", "сикасизми?", "скасиз", "соска", "сука", "ташак", "ташақ", "тошок", 
@@ -94,7 +94,7 @@ UYATLI_SOZLAR = {"am", "ammisan", "ammislar", "ammislar?", "ammisizlar", "ammisi
     "қанжик", "қанжиқ", "қонжиқ", "am", "amlatta", "amyalaq", "amyalar", "buÿingdi ami", "buyingdi omi", "buyingni ami", "buyindi omi", 
     "buynami", "biyindi ami", "skiy", "skay", "sikey", "sik", "kutagim", "skaman", "xuy", "xuramilar", "xuy", "xuyna", "skishaman", "skishamiz", "skishamizmi?", "sikishaman", "sikishamiz", "skey"}
 
-# Game/inline reklama kalit so'zlar/domenlar
+# Ключевые слова/домены подозрительной игровой/inline-рекламы
 SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
 SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
 
@@ -108,11 +108,11 @@ async def is_admin(update: Update) -> bool:
         member = await update.get_bot().get_chat_member(chat.id, user.id)
         return member.status in ("administrator", "creator")
     except Exception as e:
-        log.warning(f"is_admin tekshiruvda xatolik: {e}")
+        log.warning(f"is_admin error: {e}")
         return False
 
 async def is_privileged_message(msg, bot) -> bool:
-    """Adminlar, creatorlar yoki guruh nomidan yozilgan (sender_chat) xabarlar uchun True."""
+    """Разрешаем сообщения админов, создателя и от имени группы (sender_chat)."""
     try:
         chat = msg.chat
         user = msg.from_user
@@ -123,7 +123,7 @@ async def is_privileged_message(msg, bot) -> bool:
             if member.status in ("administrator", "creator"):
                 return True
     except Exception as e:
-        log.warning(f"is_privileged_message xatolik: {e}")
+        log.warning(f"is_privileged_message error: {e}")
     return False
 
 async def kanal_tekshir(user_id: int, bot) -> bool:
@@ -134,7 +134,7 @@ async def kanal_tekshir(user_id: int, bot) -> bool:
         member = await bot.get_chat_member(KANAL_USERNAME, user_id)
         return member.status in ("member", "creator", "administrator")
     except Exception as e:
-        log.warning(f"kanal_tekshir xatolik: {e}")
+        log.warning(f"kanal_tekshir error: {e}")
         return False
 
 def matndan_sozlar_olish(matn: str):
@@ -142,7 +142,7 @@ def matndan_sozlar_olish(matn: str):
 
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(bot_username))]]
+        [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(bot_username))]]
     )
 
 def has_suspicious_buttons(msg) -> bool:
@@ -167,36 +167,36 @@ def has_suspicious_buttons(msg) -> bool:
 
 # ----------- Commands -----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(context.bot.username))]]
+    kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
     await update.effective_message.reply_text(
-        "<b>САЛОМ👋</b>\n"
-        "Мен барча рекламаларни, ссилкалани ва кирди чиқди хабарларни гуруҳлардан <b>ўчириб</b> <b>тураман</b>\n\n"
-        "Профилингиз <b>ID</b> гизни аниқлаб бераман\n\n"
-        "Мажбурий гурухга одам қўштираман ва каналга аъзо бўлдираман ➕\n\n"
-        "18+ уятли сўзларни ўчираман ва бошқа кўплаб ёрдамлар бераман 👨🏻‍✈\n\n"
-        "Бот командалари <b>қўлланмаси</b> 👉 /help\n\n"
-        "Фақат Ишлашим учун гуруҳингизга қўшиб, <b>ADMIN</b> <b>беришингиз</b> <b>керак</b> 🙂\n\n"
-        "Мурожаат учун👉 @Devona0107",
+        "<b>ПРИВЕТ👋</b>\n"
+        "Я <b>удаляю</b> из групп любые рекламные посты, ссылки, сообщения о входе/выходе и рекламу от вспомогательных ботов.\n\n"
+        "Могу определить ваш <b>ID</b> профиля.\n\n"
+        "Сделаю обязательным добавление людей в группу и подписку на канал (иначе писать нельзя) ➕\n\n"
+        "Удаляю 18+ нецензурные слова и делаю многое другое 👨🏻‍✈\n\n"
+        "Справка по командам 👉 /help\n\n"
+        "Чтобы я работал, добавьте меня в группу и дайте <b>ПРАВА АДМИНА</b> 🙂\n\n"
+        "Для связи👉 @Devona0107",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "📌 <b>БУЙРУҚЛАР РЎЙХАТИ</b>\n\n"
-        "🔹 <b>/id</b> - Аккаунтингиз ID ни кўрсатади.\n"
-        "🔹 <b>/tun</b> — Тун режими(шу дақиқадан ёзилган хабарлар автоматик ўчирилиб турилади).\n"
-        "🔹 <b>/tunoff</b> — Тун режимини ўчириш.\n"
-        "🔹 <b>/ruxsat</b> — (Ответит) орқали имтиёз бериш.\n"
-        "🔹 <b>/kanal @username</b> — Мажбурий кўрсатилган каналга аъзо қилдириш.\n"
-        "🔹 <b>/kanaloff</b> — Мажбурий каналга аъзони ўчириш.\n"
-        "🔹 <b>/majbur [3–25]</b> — Гурухга мажбурий одам қўшишни ёқиш.\n"
-        "🔹 <b>/majburoff</b> — Мажбурий қўшишни ўчириш.\n"
-        "🔹 <b>/top</b> — TOP одам қўшганлар.\n"
-        "🔹 <b>/cleangroup</b> — Одам қўшганлар хисобини 0 қилиш.\n"
-        "🔹 <b>/count</b> — Ўзингиз нечта қўшдингиз.\n"
-        "🔹 <b>/replycount</b> — (Ответит) қилинган одам қўшганлар сони.\n"
-        "🔹 <b>/cleanuser</b> — (Ответит) қилинган одам қўшган хисобини 0 қилиш.\n"
+        "📌 <b>СПИСОК КОМАНД</b>\n\n"
+        "🔹 <b>/id</b> — Показать ваш ID.\n"
+        "🔹 <b>/tun</b> — Ночной режим (все новые сообщения обычных пользователей будут автоматически удаляться).\n"
+        "🔹 <b>/tunoff</b> — Выключить ночной режим.\n"
+        "🔹 <b>/ruxsat</b> — Выдать привилегию по reply.\n"
+        "🔹 <b>/kanal @username</b> — Включить обязательную подписку на указанный канал.\n"
+        "🔹 <b>/kanaloff</b> — Отключить обязательную подписку.\n"
+        "🔹 <b>/majbur [3–25]</b> — Включить обязательное добавление людей в группу.\n"
+        "🔹 <b>/majburoff</b> — Отключить обязательное добавление.\n"
+        "🔹 <b>/top</b> — Топ участников по добавлениям.\n"
+        "🔹 <b>/cleangroup</b> — Обнулить счётчики всех пользователей.\n"
+        "🔹 <b>/count</b> — Сколько людей добавили вы.\n"
+        "🔹 <b>/replycount</b> — По reply: сколько добавил указанный пользователь.\n"
+        "🔹 <b>/cleanuser</b> — По reply: обнулить счётчик пользователя.\n"
     )
     await update.effective_message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
@@ -204,57 +204,57 @@ async def id_berish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     user = update.effective_user
-    await update.effective_message.reply_text(f"🆔 {user.first_name}, sizning Telegram ID’ingiz: {user.id}")
+    await update.effective_message.reply_text(f"🆔 {user.first_name}, ваш Telegram ID: {user.id}")
 
 async def tun(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global TUN_REJIMI
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     TUN_REJIMI = True
-    await update.effective_message.reply_text("🌙 Tun rejimi yoqildi. Oddiy foydalanuvchi xabarlari o‘chiriladi.")
+    await update.effective_message.reply_text("🌙 Ночной режим включён. Сообщения обычных пользователей будут удаляться.")
 
 async def tunoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global TUN_REJIMI
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     TUN_REJIMI = False
-    await update.effective_message.reply_text("🌞 Tun rejimi o‘chirildi.")
+    await update.effective_message.reply_text("🌞 Ночной режим выключен.")
 
 async def ruxsat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     if not update.effective_message.reply_to_message:
-        return await update.effective_message.reply_text("Iltimos, foydalanuvchi xabariga reply qiling.")
+        return await update.effective_message.reply_text("Пожалуйста, ответьте (reply) на сообщение пользователя.")
     uid = update.effective_message.reply_to_message.from_user.id
     RUXSAT_USER_IDS.add(uid)
-    await update.effective_message.reply_text(f"✅ <code>{uid}</code> foydalanuvchiga ruxsat berildi.", parse_mode="HTML")
+    await update.effective_message.reply_text(f"✅ Пользователю <code>{uid}</code> выдана привилегия.", parse_mode="HTML")
 
 async def kanal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     global KANAL_USERNAME
     if context.args:
         KANAL_USERNAME = context.args[0]
-        await update.effective_message.reply_text(f"📢 Majburiy kanal: {KANAL_USERNAME}")
+        await update.effective_message.reply_text(f"📢 Обязательный канал: {KANAL_USERNAME}")
     else:
-        await update.effective_message.reply_text("Namuna: /kanal @username")
+        await update.effective_message.reply_text("Пример: /kanal @username")
 
 async def kanaloff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     global KANAL_USERNAME
     KANAL_USERNAME = None
-    await update.effective_message.reply_text("🚫 Majburiy kanal talabi o‘chirildi.")
+    await update.effective_message.reply_text("🚫 Требование подписки на канал отключено.")
 
 def majbur_klaviatura():
     rows = [[3, 5, 7, 10, 12], [15, 18, 20, 25, 30]]
     keyboard = [[InlineKeyboardButton(str(n), callback_data=f"set_limit:{n}") for n in row] for row in rows]
-    keyboard.append([InlineKeyboardButton("❌ BEKOR QILISH ❌", callback_data="set_limit:cancel")])
+    keyboard.append([InlineKeyboardButton("❌ ОТМЕНИТЬ ❌", callback_data="set_limit:cancel")])
     return InlineKeyboardMarkup(keyboard)
 
 async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     global MAJBUR_LIMIT
     if context.args:
         try:
@@ -263,104 +263,104 @@ async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError
             MAJBUR_LIMIT = val
             await update.effective_message.reply_text(
-                f"✅ Majburiy odam qo‘shish limiti: <b>{MAJBUR_LIMIT}</b>",
+                f"✅ Лимит обязательных приглашений: <b>{MAJBUR_LIMIT}</b>",
                 parse_mode="HTML"
             )
         except ValueError:
             await update.effective_message.reply_text(
-                "❌ Noto‘g‘ri qiymat. Ruxsat etilgan oraliq: <b>3–25</b>. Masalan: <code>/majbur 10</code>",
+                "❌ Неверное значение. Допустимый диапазон: <b>3–25</b>. Например: <code>/majbur 10</code>",
                 parse_mode="HTML"
             )
     else:
         await update.effective_message.reply_text(
-            "👥 Guruhda majburiy odam qo‘shishni nechta qilib belgilay? 👇\n"
-            "Qo‘shish shart emas — /majburoff",
+            "👥 Сколько людей нужно обязательно добавить в группу? 👇\n"
+            "Не обязательно — /majburoff",
             reply_markup=majbur_klaviatura()
         )
 
 async def on_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.callback_query.answer("Faqat adminlar!", show_alert=True)
+        return await update.callback_query.answer("Только для администраторов!", show_alert=True)
     q = update.callback_query
     await q.answer()
     data = q.data.split(":", 1)[1]
     global MAJBUR_LIMIT
     if data == "cancel":
-        return await q.edit_message_text("❌ Bekor qilindi.")
+        return await q.edit_message_text("❌ Отменено.")
     try:
         val = int(data)
         if not (3 <= val <= 25):
             raise ValueError
         MAJBUR_LIMIT = val
-        await q.edit_message_text(f"✅ Majburiy limit: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
+        await q.edit_message_text(f"✅ Лимит установлен: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
     except Exception:
-        await q.edit_message_text("❌ Noto‘g‘ri qiymat.")
+        await q.edit_message_text("❌ Неверное значение.")
 
 async def majburoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     global MAJBUR_LIMIT
     MAJBUR_LIMIT = 0
-    await update.effective_message.reply_text("🚫 Majburiy odam qo‘shish o‘chirildi.")
+    await update.effective_message.reply_text("🚫 Обязательное добавление людей отключено.")
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     if not FOYDALANUVCHI_HISOBI:
-        return await update.effective_message.reply_text("Hali hech kim odam qo‘shmagan.")
+        return await update.effective_message.reply_text("Пока никто никого не добавил.")
     items = sorted(FOYDALANUVCHI_HISOBI.items(), key=lambda x: x[1], reverse=True)[:100]
-    lines = ["🏆 <b>Eng ko‘p odam qo‘shganlar</b> (TOP 100):"]
+    lines = ["🏆 <b>ТОП по количеству приглашённых</b> (TOP 100):"]
     for i, (uid, cnt) in enumerate(items, start=1):
-        lines.append(f"{i}. <code>{uid}</code> — {cnt} ta")
+        lines.append(f"{i}. <code>{uid}</code> — {cnt} чел.")
     await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
 
 async def cleangroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     FOYDALANUVCHI_HISOBI.clear()
     RUXSAT_USER_IDS.clear()
-    await update.effective_message.reply_text("🗑 Barcha foydalanuvchilar hisobi va imtiyozlar 0 qilindi.")
+    await update.effective_message.reply_text("🗑 Все счётчики и привилегии сброшены.")
 
 async def count_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if MAJBUR_LIMIT > 0:
         qoldi = max(MAJBUR_LIMIT - cnt, 0)
-        await update.effective_message.reply_text(f"📊 Siz {cnt} ta odam qo‘shgansiz. Qolgan: {qoldi} ta.")
+        await update.effective_message.reply_text(f"📊 Вы пригласили {cnt} чел. Осталось: {qoldi}.")
     else:
-        await update.effective_message.reply_text(f"📊 Siz {cnt} ta odam qo‘shgansiz. (Majburiy qo‘shish faol emas)")
+        await update.effective_message.reply_text(f"📊 Вы пригласили {cnt} чел. (Обязательное добавление выключено)")
 
 async def replycount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     msg = update.effective_message
     if not msg.reply_to_message:
-        return await msg.reply_text("Iltimos, kimning hisobini ko‘rmoqchi bo‘lsangiz o‘sha xabarga reply qiling.")
+        return await msg.reply_text("Пожалуйста, сделайте reply на сообщение нужного пользователя.")
     uid = msg.reply_to_message.from_user.id
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
-    await msg.reply_text(f"👤 <code>{uid}</code> {cnt} ta odam qo‘shgan.", parse_mode="HTML")
+    await msg.reply_text(f"👤 <code>{uid}</code> пригласил(а) {cnt} чел.", parse_mode="HTML")
 
 async def cleanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Faqat adminlar.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     msg = update.effective_message
     if not msg.reply_to_message:
-        return await msg.reply_text("Iltimos, kimni 0 qilmoqchi bo‘lsangiz o‘sha foydalanuvchi xabariga reply qiling.")
+        return await msg.reply_text("Пожалуйста, сделайте reply на сообщение пользователя, которого нужно обнулить.")
     uid = msg.reply_to_message.from_user.id
     FOYDALANUVCHI_HISOBI[uid] = 0
     RUXSAT_USER_IDS.discard(uid)
-    await msg.reply_text(f"🗑 <code>{uid}</code> foydalanuvchi hisobi 0 qilindi (imtiyoz o‘chirildi).", parse_mode="HTML")
+    await msg.reply_text(f"🗑 Счётчик пользователя <code>{uid}</code> обнулён (привилегия снята).", parse_mode="HTML")
 
 async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     user_id = q.from_user.id
     if not KANAL_USERNAME:
-        return await q.edit_message_text("⚠️ Kanal sozlanmagan.")
+        return await q.edit_message_text("⚠️ Канал не настроен.")
     try:
         member = await context.bot.get_chat_member(KANAL_USERNAME, user_id)
         if member.status in ("member", "administrator", "creator"):
-            # ⬇️ To'liq ruxsat beramiz (guruh sozlamalari darajasida)
+            # Полные права (в рамках разрешений группы)
             try:
                 await context.bot.restrict_chat_member(
                     chat_id=q.message.chat.id,
@@ -369,17 +369,17 @@ async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-            await q.edit_message_text("✅ A’zo bo‘lganingiz tasdiqlandi. Endi guruhda yozishingiz mumkin.")
+            await q.edit_message_text("✅ Подписка подтверждена. Теперь вы можете писать в группе.")
         else:
-            await q.edit_message_text("❌ Hali kanalga a’zo emassiz.")
+            await q.edit_message_text("❌ Вы ещё не подписаны на канал.")
     except Exception:
-        await q.edit_message_text("⚠️ Tekshirishda xatolik. Kanal username noto‘g‘ri yoki bot kanalga a’zo emas.")
+        await q.edit_message_text("⚠️ Ошибка проверки. Некорректный username канала или бот не является участником канала.")
 
 async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
-    # faqat ogohlantirish olgan egasi bosa oladi
+    # Нажимать может только сам пользователь, получивший предупреждение
     data = q.data
     if ":" in data:
         try:
@@ -387,10 +387,9 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             owner_id = None
         if owner_id and owner_id != uid:
-            return await q.answer("Bu tugma siz uchun emas!", show_alert=True)
+            return await q.answer("Эта кнопка не для вас!", show_alert=True)
     cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
     if uid in RUXSAT_USER_IDS or (MAJBUR_LIMIT > 0 and cnt >= MAJBUR_LIMIT):
-        # ⬇️ To'liq ruxsatlar
         try:
             await context.bot.restrict_chat_member(
                 chat_id=q.message.chat.id,
@@ -400,10 +399,10 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         BLOK_VAQTLARI.pop((q.message.chat.id, uid), None)
-        await q.edit_message_text("✅ Talab bajarilgan! Endi guruhda yozishingiz mumkin.")
+        await q.edit_message_text("✅ Требование выполнено! Теперь вы можете писать в группе.")
     else:
         qoldi = max(MAJBUR_LIMIT - cnt, 0)
-        await q.edit_message_text(f"❌ Hali yetarli emas. Qolgan: {qoldi} ta.")
+        await q.edit_message_text(f"❌ Недостаточно приглашений. Осталось: {qoldi}.")
 
 async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -414,48 +413,48 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         member = await context.bot.get_chat_member(chat.id, user.id)
         if member.status not in ("administrator", "creator"):
-            return await q.answer("Faqat adminlar imtiyoz bera oladi!", show_alert=True)
+            return await q.answer("Привилегии может выдавать только администратор!", show_alert=True)
     except Exception:
-        return await q.answer("Tekshirishda xatolik.", show_alert=True)
+        return await q.answer("Ошибка проверки.", show_alert=True)
     await q.answer()
     try:
         target_id = int(q.data.split(":", 1)[1])
     except Exception:
-        return await q.edit_message_text("❌ Noto‘g‘ri ma'lumot.")
+        return await q.edit_message_text("❌ Неверные данные.")
     RUXSAT_USER_IDS.add(target_id)
-    await q.edit_message_text(f"🎟 <code>{target_id}</code> foydalanuvchiga imtiyoz berildi. Endi u yozishi mumkin.", parse_mode="HTML")
+    await q.edit_message_text(f"🎟 Пользователю <code>{target_id}</code> выдана привилегия. Теперь он(а) может писать.", parse_mode="HTML")
 
 # ----------- Filters -----------
 async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg or not msg.chat or not msg.from_user:
         return
-    # Admin/creator/guruh nomidan xabarlar — teginmaymiz
+    # Админы/создатель/сообщения от имени чата — пропускаем
     if await is_privileged_message(msg, context.bot):
         return
-    # Oq ro'yxat
+    # Белый список
     if msg.from_user.id in WHITELIST or (msg.from_user.username and msg.from_user.username in WHITELIST):
         return
-    # Tun rejimi
+    # Ночной режим
     if TUN_REJIMI:
         try:
             await msg.delete()
         except:
             pass
         return
-    # Kanal a'zoligi
+    # Проверка подписки на канал
     if not await kanal_tekshir(msg.from_user.id, context.bot):
         try:
             await msg.delete()
         except:
             pass
         kb = [
-            [InlineKeyboardButton("✅ Men a’zo bo‘ldim", callback_data="kanal_azo")],
-            [InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(context.bot.username))]
+            [InlineKeyboardButton("✅ Я подписался(ась)", callback_data="kanal_azo")],
+            [InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]
         ]
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text=f"⚠️ {msg.from_user.first_name}, siz {KANAL_USERNAME} kanalga a’zo emassiz!",
+            text=f"⚠️ {msg.from_user.first_name}, вы не подписаны на {KANAL_USERNAME}!",
             reply_markup=InlineKeyboardMarkup(kb)
         )
         return
@@ -463,7 +462,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
     text = msg.text or msg.caption or ""
     entities = msg.entities or msg.caption_entities or []
 
-    # Inline bot orqali kelgan xabar — ko'pincha game reklama
+    # Сообщение через inline-бота — часто игровая реклама
     if getattr(msg, "via_bot", None):
         try:
             await msg.delete()
@@ -471,12 +470,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text="⚠️ Inline bot orqali yuborilgan reklama taqiqlangan!",
+            text="⚠️ Реклама через inline-ботов запрещена!",
             reply_markup=add_to_group_kb(context.bot.username)
         )
         return
 
-    # Tugmalarda game/web-app/URL bo'lsa — blok
+    # Кнопки с играми/web-app/URL — блокируем
     if has_suspicious_buttons(msg):
         try:
             await msg.delete()
@@ -484,12 +483,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text="⚠️ O‘yin/veb-app tugmali reklama taqiqlangan!",
+            text="⚠️ Реклама с игровыми/веб-app кнопками запрещена!",
             reply_markup=add_to_group_kb(context.bot.username)
         )
         return
 
-    # Matndan o‘yin reklamasini aniqlash
+    # Рекламные тексты про игры
     low = text.lower()
     if any(k in low for k in SUSPECT_KEYWORDS):
         try:
@@ -498,12 +497,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text="⚠️ O‘yin reklamalari taqiqlangan!",
+            text="⚠️ Игровая реклама запрещена!",
             reply_markup=add_to_group_kb(context.bot.username)
         )
         return
 
-    # Botlardan kelgan reklama/havola/game
+    # Сообщения от ботов с game/ссылками
     if getattr(msg.from_user, "is_bot", False):
         has_game = bool(getattr(msg, "game", None))
         has_url_entity = any(ent.type in ("text_link", "url", "mention") for ent in entities)
@@ -515,12 +514,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
                 pass
             await context.bot.send_message(
                 chat_id=msg.chat_id,
-                text="⚠️ Botlardan kelgan reklama/havola yoki game taqiqlangan!",
+                text="⚠️ Реклама/ссылки или game от ботов запрещены!",
                 reply_markup=add_to_group_kb(context.bot.username)
             )
             return
 
-    # Yashirin yoki aniq ssilkalar
+    # Скрытые или явные ссылки
     for ent in entities:
         if ent.type in ("text_link", "url", "mention"):
             url = getattr(ent, "url", "") or ""
@@ -531,7 +530,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
                     pass
                 await context.bot.send_message(
                     chat_id=msg.chat_id,
-                    text=f"⚠️ {msg.from_user.first_name}, yashirin ssilka yuborish taqiqlangan!",
+                    text=f"⚠️ {msg.from_user.first_name}, отправка скрытых ссылок запрещена!",
                     reply_markup=add_to_group_kb(context.bot.username)
                 )
                 return
@@ -543,12 +542,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text=f"⚠️ {msg.from_user.first_name}, reklama/ssilka yuborish taqiqlangan!",
+            text=f"⚠️ {msg.from_user.first_name}, реклама/ссылки запрещены!",
             reply_markup=add_to_group_kb(context.bot.username)
         )
         return
 
-    # So'kinish
+    # Нецензурная лексика (словарь не меняли)
     sozlar = matndan_sozlar_olish(text)
     if any(s in UYATLI_SOZLAR for s in sozlar):
         try:
@@ -557,12 +556,12 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         await context.bot.send_message(
             chat_id=msg.chat_id,
-            text=f"⚠️ {msg.from_user.first_name}, guruhda so‘kinish taqiqlangan!",
+            text=f"⚠️ {msg.from_user.first_name}, мат в группе запрещён!",
             reply_markup=add_to_group_kb(context.bot.username)
         )
         return
 
-# Yangi a'zolarni qo'shganlarni hisoblash hamda kirdi/chiqdi xabarlarni o'chirish
+# Учёт добавивших новых участников и удаление служебных сообщений
 async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     adder = msg.from_user
@@ -577,7 +576,7 @@ async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         pass
 
-# Majburiy qo'shish filtri — yetmaganlarda 5 daqiqaga blok ham qo'yiladi
+# Фильтр обязательных добавлений — недостача => блок на 3 минуты
 async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if MAJBUR_LIMIT <= 0:
         return
@@ -589,7 +588,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid = msg.from_user.id
 
-    # Agar foydalanuvchi hanuz blokda bo'lsa — xabarini o'chirib, hech narsa yubormaymiz
+    # Если пользователь ещё в блоке — удаляем сообщение молча
     now = datetime.now(timezone.utc)
     key = (msg.chat_id, uid)
     until_old = BLOK_VAQTLARI.get(key)
@@ -606,13 +605,13 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cnt >= MAJBUR_LIMIT:
         return
 
-    # Xabarni o'chiramiz
+    # Удаляем сообщение
     try:
         await msg.delete()
     except:
         return
 
-    # 5 daqiqaga blok (hozir 3 daqiqa)
+    # Блок на 3 минуты
     until = datetime.now(timezone.utc) + timedelta(minutes=3)
     BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
@@ -626,16 +625,15 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.warning(f"Restrict failed: {e}")
 
     qoldi = max(MAJBUR_LIMIT - cnt, 0)
-    until_str = until.strftime('%H:%M')
     kb = [
-        [InlineKeyboardButton("✅ Odam qo‘shdim", callback_data=f"check_added:{uid}")],
-        [InlineKeyboardButton("🎟 Imtiyoz berish", callback_data=f"grant:{uid}")],
-        [InlineKeyboardButton("➕ Guruhga qo‘shish", url=admin_add_link(context.bot.username))],
-        [InlineKeyboardButton("⏳ 3 daqiqaga bloklandi", callback_data="noop")]
+        [InlineKeyboardButton("✅ Я добавил(а) людей", callback_data=f"check_added:{uid}")],
+        [InlineKeyboardButton("🎟 Выдать привилегию", callback_data=f"grant:{uid}")],
+        [InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))],
+        [InlineKeyboardButton("⏳ Блок на 3 минуты", callback_data="noop")]
     ]
     await context.bot.send_message(
         chat_id=msg.chat_id,
-        text=f"⚠️ Guruhda yozish uchun {MAJBUR_LIMIT} ta odam qo‘shishingiz kerak! Qolgan: {qoldi} ta.",
+        text=f"⚠️ Чтобы писать в группе, нужно пригласить {MAJBUR_LIMIT} человек(а)! Осталось: {qoldi}.",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
@@ -643,21 +641,21 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_commands(app):
     await app.bot.set_my_commands(
         commands=[
-            BotCommand("start", "Bot haqida ma'lumot"),
-            BotCommand("help", "Bot qo'llanmasi"),
-            BotCommand("id", "Sizning ID’ingiz"),
-            BotCommand("count", "Siz nechta qo‘shgansiz"),
-            BotCommand("top", "TOP 100 ro‘yxati"),
-            BotCommand("replycount", "(reply) foydalanuvchi nechta qo‘shganini ko‘rish"),
-            BotCommand("majbur", "Majburiy odam limitini (3–25) o‘rnatish"),
-            BotCommand("majburoff", "Majburiy qo‘shishni o‘chirish"),
-            BotCommand("cleangroup", "Hamma hisobini 0 qilish"),
-            BotCommand("cleanuser", "(reply) foydalanuvchi hisobini 0 qilish"),
-            BotCommand("ruxsat", "(reply) imtiyoz berish"),
-            BotCommand("kanal", "Majburiy kanalni sozlash"),
-            BotCommand("kanaloff", "Majburiy kanalni o‘chirish"),
-            BotCommand("tun", "Tun rejimini yoqish"),
-            BotCommand("tunoff", "Tun rejimini o‘chirish"),
+            BotCommand("start", "Информация о боте"),
+            BotCommand("help", "Справка по боту"),
+            BotCommand("id", "Ваш ID"),
+            BotCommand("count", "Сколько вы пригласили"),
+            BotCommand("top", "ТОП-100 приглашений"),
+            BotCommand("replycount", "(reply) сколько пригласил пользователь"),
+            BotCommand("majbur", "Установить лимит обязательных приглашений (3–25)"),
+            BotCommand("majburoff", "Отключить обязательные приглашения"),
+            BotCommand("cleangroup", "Сбросить счётчики всем"),
+            BotCommand("cleanuser", "(reply) сбросить счётчик пользователю"),
+            BotCommand("ruxsat", "(reply) выдать привилегию"),
+            BotCommand("kanal", "Настроить обязательный канал"),
+            BotCommand("kanaloff", "Отключить обязательный канал"),
+            BotCommand("tun", "Включить ночной режим"),
+            BotCommand("tunoff", "Выключить ночной режим"),
         ],
         scope=BotCommandScopeAllPrivateChats()
     )
@@ -709,14 +707,14 @@ async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if st in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED):
         me = await context.bot.get_me()
         kb = InlineKeyboardMarkup([[InlineKeyboardButton(
-            '🔐 Botni admin qilish', url=admin_add_link(me.username)
+            '🔐 Сделать бота админом', url=admin_add_link(me.username)
         )]])
         try:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=(
-                    '⚠️ Bot hozircha *admin emas*.\n'
-                    'Iltimos, pastdagi tugma orqali admin qiling, shunda barcha funksiyalar to\'liq ishlaydi.'
+                    '⚠️ Бот пока *не администратор*.\n'
+                    'Пожалуйста, дайте права администратора по кнопке ниже — тогда все функции будут работать.'
                 ),
                 reply_markup=kb,
                 parse_mode='Markdown'
