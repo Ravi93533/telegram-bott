@@ -1300,7 +1300,7 @@ def main():
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-2)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri), group=-1)
 
-     # Post-init hook
+   # Post-init hook
     app.post_init = post_init
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
