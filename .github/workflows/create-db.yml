@@ -1,0 +1,57 @@
+name: Create Postgres DB
+
+on:
+  workflow_dispatch:
+    inputs:
+      DBNAME:
+        description: 'New database name (e.g., tgbot_db2)'
+        required: true
+        default: 'tgbot_db2'
+
+jobs:
+  create-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Create database if missing
+        env:
+          DB_URL: ${{ secrets.EXTERNAL_DATABASE_URL }}
+          NEW_DB: ${{ github.event.inputs.DBNAME }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "❌ Missing EXTERNAL_DATABASE_URL secret in GitHub → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "Target DB: $NEW_DB"
+          # Check if DB exists
+          EXIST=$(psql "$DB_URL" -tAc "SELECT 1 FROM pg_database WHERE datname='${NEW_DB}';")
+          if [ "$EXIST" = "1" ]; then
+            echo "✅ Database already exists: $NEW_DB"
+          else
+            psql "$DB_URL" -c "CREATE DATABASE ${NEW_DB};"
+            echo "✅ Created database: $NEW_DB"
+          fi
+
+      # Optional: create a dedicated user for this DB (uncomment & set a password)
+      # - name: Create dedicated user and grant privileges (optional)
+      #   env:
+      #     DB_URL: ${{ secrets.EXTERNAL_DATABASE_URL }}
+      #     NEW_DB: ${{ github.event.inputs.DBNAME }}
+      #     NEW_USER: tgbot_user2
+      #     NEW_PASS: "CHANGEME-strong-password"
+      #   run: |
+      #     psql "$DB_URL" -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${NEW_USER}') THEN CREATE USER ${NEW_USER} WITH PASSWORD '${NEW_PASS}'; END IF; END $$;"
+      #     psql "$DB_URL" -c "ALTER DATABASE ${NEW_DB} OWNER TO ${NEW_USER};"
+      #     echo "✅ Granted ownership of ${NEW_DB} to ${NEW_USER}"
+
+      - name: Print DATABASE_URL for this DB
+        env:
+          DB_URL: ${{ secrets.EXTERNAL_DATABASE_URL }}
+          NEW_DB: ${{ github.event.inputs.DBNAME }}
+        run: |
+          BASE="${DB_URL%/*}"
+          echo "----------- COPY THIS INTO YOUR BOT'S RENDER ENV -----------"
+          echo "${BASE}/${NEW_DB}?sslmode=require"
+          echo "------------------------------------------------------------"
