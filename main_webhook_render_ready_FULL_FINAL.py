@@ -1,6 +1,27 @@
-from telegram import Chat, Message
+from telegram import Chat, Message, Update, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatMemberStatus, ParseMode
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes, filters
 
+import threading
+import os
+import re
+import logging
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
+from flask import Flask
+
+# --- New (Postgres) ---
+import asyncio
+import json
+from typing import List, Optional
+
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None  # handled below with a log warning
+
+# ---------------------- Linked channel helpers ----------------------
 def _extract_forward_origin_chat(msg: Message):
     fo = getattr(msg, "forward_origin", None)
     if fo is not None:
@@ -51,37 +72,8 @@ async def is_linked_channel_autoforward(msg: Message, bot) -> bool:
         return True
     except Exception:
         return False
-        linked_id = getattr(msg.chat, "linked_chat_id", None)
-        if not linked_id:
-            return False
-        fwd_chat = _extract_forward_origin_chat(msg)
-        if fwd_chat and getattr(fwd_chat, "id", None) == linked_id:
-            return True
-    except Exception:
-        pass
-    return False
-from telegram import Update, BotCommand, BotCommandScopeAllPrivateChats, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ChatMemberStatus
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes, filters
 
-def admin_add_link(bot_username: str) -> str:
-    rights = [
-        'delete_messages','restrict_members','invite_users',
-        'pin_messages','manage_topics','manage_video_chats','manage_chat'
-    ]
-    rights_param = '+'.join(rights)
-    return f"https://t.me/{bot_username}?startgroup&admin={rights_param}"
-
-import threading
-import os
-import re
-import logging
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-
-from flask import Flask
-
-# ----------- Small keep-alive web server -----------
+# ---------------------- Small keep-alive web server ----------------------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
@@ -93,6 +85,7 @@ def run_web():
 
 def start_web():
     threading.Thread(target=run_web, daemon=True).start()
+
 
 # ----------- Config -----------
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -124,7 +117,7 @@ FULL_PERMS = ChatPermissions(
     can_invite_users=True,
 )
 
-# Blok uchun ruxsatlar (3 daqiqa): faqat yozish yopiladi, odam qo'shishga ruxsat qoldiriladi
+# Blok uchun ruxsatlar (1 daqiqa): faqat yozish yopiladi, odam qo'shishga ruxsat qoldiriladi
 BLOCK_PERMS = ChatPermissions(
     can_send_messages=False,
     can_send_audios=False,
@@ -393,17 +386,126 @@ UYATLI_SOZLAR = {"апчхуй", "архипиздрит", "ахуй", "ахул
 SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
 SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
 
-import os
-import json
-import asyncio
-from telegram.constants import ParseMode
-from telegram.error import Forbidden, BadRequest, RetryAfter, TimedOut, NetworkError, TelegramError
-
-# ----------- Helpers -----------
-
 # ----------- DM Broadcast (Owner only) -----------
 SUB_USERS_FILE = "subs_users.json"
 
+OWNER_IDS = {165553982}
+
+def is_owner(update: Update) -> bool:
+    u = update.effective_user
+    return bool(u and u.id in OWNER_IDS)
+
+# Postgres connection pool
+DB_POOL: Optional["asyncpg.Pool"] = None
+
+def _get_db_url() -> Optional[str]:
+    return (
+        os.getenv("DATABASE_URL")
+        or os.getenv("INTERNAL_DATABASE_URL")
+        or os.getenv("DATABASE_INTERNAL_URL")
+        or os.getenv("DB_URL")
+    )
+
+async def init_db(app=None):
+    """Create asyncpg pool and ensure tables exist. Also migrate JSON -> DB once."""
+    global DB_POOL
+    db_url = _get_db_url()
+    if not db_url:
+        log.warning("DATABASE_URL topilmadi; DM ro'yxati JSON faylga yoziladi (ephemeral).")
+        return
+    if asyncpg is None:
+        log.error("asyncpg o'rnatilmagan. requirements.txt ga 'asyncpg' qo'shing.")
+        return
+    DB_POOL = await asyncpg.create_pool(dsn=db_url, min_size=1, max_size=5)
+    async with DB_POOL.acquire() as con:
+        await con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dm_users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                is_bot BOOLEAN DEFAULT FALSE,
+                language_code TEXT,
+                last_seen TIMESTAMPTZ DEFAULT now()
+            );
+            """
+        )
+    # Migrate from JSON (best-effort, only if DB empty)
+    try:
+        if DB_POOL:
+            async with DB_POOL.acquire() as con:
+                count_row = await con.fetchval("SELECT COUNT(*) FROM dm_users;")
+            if count_row == 0 and os.path.exists(SUB_USERS_FILE):
+                s = _load_ids(SUB_USERS_FILE)
+                if s:
+                    async with DB_POOL.acquire() as con:
+                        async with con.transaction():
+                            for cid in s:
+                                try:
+                                    cid_int = int(cid)
+                                except Exception:
+                                    continue
+                                await con.execute(
+                                    "INSERT INTO dm_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING;", cid_int
+                                )
+                    log.info(f"Migratsiya: JSON dan Postgresga {len(s)} ta ID import qilindi.")
+    except Exception as e:
+        log.warning(f"Migratsiya vaqtida xato: {e}")
+
+async def dm_upsert_user(user):
+    """Add/update a user to dm_users (Postgres if available, else JSON)."""
+    global DB_POOL
+    if user is None:
+        return
+    if DB_POOL:
+        try:
+            async with DB_POOL.acquire() as con:
+                await con.execute(
+                    """
+                    INSERT INTO dm_users (user_id, username, first_name, last_name, is_bot, language_code, last_seen)
+                    VALUES ($1,$2,$3,$4,$5,$6, now())
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        username=EXCLUDED.username,
+                        first_name=EXCLUDED.first_name,
+                        last_name=EXCLUDED.last_name,
+                        is_bot=EXCLUDED.is_bot,
+                        language_code=EXCLUDED.language_code,
+                        last_seen=now();
+                    """,
+                    user.id, user.username, user.first_name, user.last_name, user.is_bot, getattr(user, "language_code", None)
+                )
+        except Exception as e:
+            log.warning(f"dm_upsert_user(DB) xatolik: {e}")
+    else:
+        # Fallback to JSON
+        add_chat_to_subs_fallback(user)
+
+async def dm_all_ids() -> List[int]:
+    global DB_POOL
+    if DB_POOL:
+        try:
+            async with DB_POOL.acquire() as con:
+                rows = await con.fetch("SELECT user_id FROM dm_users;")
+            return [r["user_id"] for r in rows]
+        except Exception as e:
+            log.warning(f"dm_all_ids(DB) xatolik: {e}")
+            return []
+    else:
+        return list(_load_ids(SUB_USERS_FILE))
+
+async def dm_remove_user(user_id: int):
+    global DB_POOL
+    if DB_POOL:
+        try:
+            async with DB_POOL.acquire() as con:
+                await con.execute("DELETE FROM dm_users WHERE user_id=$1;", user_id)
+        except Exception as e:
+            log.warning(f"dm_remove_user(DB) xatolik: {e}")
+    else:
+        remove_chat_from_subs_fallback(user_id)
+
+# ----------- Fallback JSON helpers (only used if DB not available) -----------
 def _load_ids(path: str):
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -421,28 +523,24 @@ def _save_ids(path: str, data: set):
         except Exception:
             print(f"IDs saqlashda xatolik: {e}")
 
-def add_chat_to_subs(chat):
-    # faqat private foydalanuvchilar ro'yxati
+def add_chat_to_subs_fallback(user_or_chat):
     s = _load_ids(SUB_USERS_FILE)
-    s.add(chat.id)
-    _save_ids(SUB_USERS_FILE, s)
-    return "user"
-
-def remove_chat_from_subs(chat):
-    s = _load_ids(SUB_USERS_FILE)
-    if chat.id in s:
-        s.remove(chat.id)
+    # user_or_chat is User in our call sites
+    cid = getattr(user_or_chat, "id", None)
+    if cid is not None:
+        s.add(cid)
         _save_ids(SUB_USERS_FILE, s)
     return "user"
 
-# OWNER_ID ni Render environment variables orqali berish mumkin:
-# OWNER_ID=123456789  (yoki kodda to'g'ridan-to'g'ri almashtiring)
-OWNER_IDS = {165553982}
+def remove_chat_from_subs_fallback(user_id: int):
+    s = _load_ids(SUB_USERS_FILE)
+    if user_id in s:
+        s.remove(user_id)
+        _save_ids(SUB_USERS_FILE, s)
+    return "user"
 
-def is_owner(update: Update) -> bool:
-    u = update.effective_user
-    return bool(u and u.id in OWNER_IDS)
 
+# ----------- Privilege/Admin helpers -----------
 async def is_admin(update: Update) -> bool:
     chat = update.effective_chat
     msg = update.effective_message
@@ -504,6 +602,14 @@ async def kanal_tekshir(user_id: int, bot) -> bool:
 def matndan_sozlar_olish(matn: str):
     return re.findall(r"\b\w+\b", (matn or "").lower())
 
+def admin_add_link(bot_username: str) -> str:
+    rights = [
+        'delete_messages','restrict_members','invite_users',
+        'pin_messages','manage_topics','manage_video_chats','manage_chat'
+    ]
+    rights_param = '+'.join(rights)
+    return f"https://t.me/{bot_username}?startgroup&admin={rights_param}"
+
 def add_to_group_kb(bot_username: str):
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(bot_username))]]
@@ -534,10 +640,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Auto-subscribe: /start bosgan foydalanuvchini DM ro'yxatga qo'shamiz
     try:
         if update.effective_chat.type == 'private':
-            add_chat_to_subs(update.effective_chat)
-    except Exception:
-        pass
-    kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
+            await dm_upsert_user(update.effective_user)
+    except Exception as e:
+log.warning(f"/start dm_upsert_user xatolik: {e}")
+kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
     await update.effective_message.reply_text(
     "<b>ПРИВЕТ👋</b>\n\n"
 "Я <b>удаляю</b> из групп любые рекламные посты, ссылки, сообщения о <b>входе/выходе</b> и рекламу от вспомогательных ботов.\n\n"
@@ -550,6 +656,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 "<b>Для связи или вопроси</b> 👉 @Devona0107",
     parse_mode="HTML",
     reply_markup=InlineKeyboardMarkup(kb))
+
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "📌 <b>СПИСОК КОМАНД</b>\n\n"
@@ -703,7 +810,7 @@ async def count_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def replycount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Только для администраторов.")
+        return await update.effective_message.reply_text("⛔ Только для админов.")
     msg = update.effective_message
     if not msg.reply_to_message:
         return await msg.reply_text("Пожалуйста, ОТВЕТЬте на сообщение, чей аккаунт вы хотите увидеть.")
@@ -713,7 +820,7 @@ async def replycount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cleanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Только для администраторов.")
+        return await update.effective_message.reply_text("⛔ Только для админов.")
     msg = update.effective_message
     if not msg.reply_to_message:
         return await msg.reply_text("Пожалуйста, ОТВЕТЬте на сообщение нужного вам пользователя 0.")
@@ -781,8 +888,6 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"❗ Вы пока {cnt} шт добавили пользователейz и еще {qoldi} шт надо добавить пользователей",
         show_alert=True
     )
-    # Xabarni o'zgartirmaymiz — tugmalar joyida qoladi
-    return
 
 async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -1009,7 +1114,7 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         return
 
-    # 5 daqiqaga blok (hozir 1 daqiqa)
+    # 1 daqiqaga blok
     until = datetime.now(timezone.utc) + timedelta(minutes=1)
     BLOK_VAQTLARI[(msg.chat_id, uid)] = until
     try:
@@ -1035,6 +1140,87 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=f"⚠️ Для публикации в группе нужно добавить {MAJBUR_LIMIT} человека! Осталось: {qoldi}.",
         reply_markup=InlineKeyboardMarkup(kb)
     )
+# -------------- Bot my_status (admin emas) ogohlantirish --------------
+async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        st = update.my_chat_member.new_chat_member.status
+    except Exception:
+        return
+    if st in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED):
+        me = await context.bot.get_me()
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(
+            '🔐 Botni admin qilish', url=admin_add_link(me.username)
+        )]])
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=(
+                    '⚠️ Bot hozircha *admin emas*.\n'
+                    "Iltimos, pastdagi tugma orqali admin qiling, shunda barcha funksiyalar to'liq ishlaydi."
+                ),
+                reply_markup=kb,
+                parse_mode='Markdown'
+            )
+        except Exception:
+            pass
+
+
+# ---------------------- DM: Broadcast ----------------------
+async def track_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Har qanday PRIVATE chatdagi xabarni ko'rsak, u foydalanuvchini DBga upsert qilamiz."""
+    try:
+        await dm_upsert_user(update.effective_user)
+    except Exception as e:
+        log.warning(f"track_private upsert xatolik: {e}")
+
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(OWNER & DM) Matnni barcha DM obunachilarga yuborish."""
+    if update.effective_chat.type != "private":
+        return await update.effective_message.reply_text("⛔ Эта команда только DM (приватный чат)е работает.")
+    if not is_owner(update):
+        return await update.effective_message.reply_text("⛔ Эта команда разрешена только владельцу бота.")
+    text = " ".join(context.args).strip()
+    if not text and update.effective_message.reply_to_message:
+        text = update.effective_message.reply_to_message.text_html or update.effective_message.reply_to_message.caption_html
+    if not text:
+        return await update.effective_message.reply_text("Foydalanish: /broadcast Yangilanish matni")
+
+    ids = await dm_all_ids()
+    total = len(ids); ok = 0; fail = 0
+    await update.effective_message.reply_text(f"📣 DM jo‘natish boshlandi. Jami foydalanuvchilar: {total}")
+    for cid in list(ids):
+        try:
+            await context.bot.send_message(cid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            ok += 1
+            await asyncio.sleep(0.05)
+        except (Exception,) as e:
+            # drop forbidden/bad users
+            await dm_remove_user(cid)
+            fail += 1
+    await update.effective_message.reply_text(f"✅ Yuborildi: {ok} ta, ❌ xatolik: {fail} ta.")
+
+async def broadcastpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """(OWNER & DM) Reply qilingan postni barcha DM obunachilarga yuborish."""
+    if update.effective_chat.type != "private":
+        return await update.effective_message.reply_text("⛔ Эта команда только DM (приватный чат)е работает.")
+    if not is_owner(update):
+        return await update.effective_message.reply_text("⛔ Эта команда разрешена только владельцу бота.")
+    msg = update.effective_message.reply_to_message
+    if not msg:
+        return await update.effective_message.reply_text("Foydalanish: /broadcastpost — yubormoqchi bo‘lgan xabarga reply qiling.")
+
+    ids = await dm_all_ids()
+    total = len(ids); ok = 0; fail = 0
+    await update.effective_message.reply_text(f"📣 DM post tarqatish boshlandi. Jami foydalanuvchilar: {total}")
+    for cid in list(ids):
+        try:
+            await context.bot.copy_message(chat_id=cid, from_chat_id=msg.chat_id, message_id=msg.message_id)
+            ok += 1
+            await asyncio.sleep(0.05)
+        except (Exception,) as e:
+            await dm_remove_user(cid)
+            fail += 1
+    await update.effective_message.reply_text(f"✅ Yuborildi: {ok} ta, ❌ xatolik: {fail} ta.")
 
 # ----------- Setup -----------
 async def set_commands(app):
@@ -1086,6 +1272,10 @@ def main():
     app.add_handler(CommandHandler("replycount", replycount))
     app.add_handler(CommandHandler("cleanuser", cleanuser))
 
+# DM broadcast (owner only)
+    app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("broadcastpost", broadcastpost))
+
     # Callbacks
     app.add_handler(CallbackQueryHandler(on_set_limit, pattern=r"^set_limit:"))
     app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
@@ -1093,95 +1283,18 @@ def main():
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
     app.add_handler(CallbackQueryHandler(lambda u,c: u.callback_query.answer(""), pattern=r"^noop$"))
 
-    # Events & Filters
+     # Events & Filters
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
     media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE | filters.GAME)
-    app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-1)
-    app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri))
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE, track_private), group=-3)
+    app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-2)
+    app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), reklama_va_soz_filtri), group=-1)
 
-    app.post_init = set_commands
+     # Post-init hook
+    app.post_init = post_init
 
-    app.add_handler(CommandHandler("broadcast", broadcast))
-    app.add_handler(CommandHandler("broadcastpost", broadcastpost))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        st = update.my_chat_member.new_chat_member.status
-    except Exception:
-        return
-    if st in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED):
-        me = await context.bot.get_me()
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton(
-            "🔐 Botni admin qilish", url=admin_add_link(me.username)
-        )]])
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=(
-                    "⚠️ Бот пока не админ.\n"
-                    "Пожалуйста, станьте администратором, используя кнопку ниже, чтобы все функции были полностью функциональны."
-                ),
-                reply_markup=kb,
-                parse_mode='Markdown'
-            )
-        except Exception:
-            pass
 
-
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """(OWNER & DM) Matnni barcha DM obunachilarga yuborish."""
-    if update.effective_chat.type != "private":
-        return await update.effective_message.reply_text("⛔ Эта команда только DM (приватный чат)е работает.")
-    if not is_owner(update):
-        return await update.effective_message.reply_text("⛔ Эта команда разрешена только владельцу бота.")
-    text = " ".join(context.args).strip()
-    if not text and update.effective_message.reply_to_message:
-        text = update.effective_message.reply_to_message.text_html or update.effective_message.reply_to_message.caption_html
-    if not text:
-        return await update.effective_message.reply_text("Foydalanish: /broadcast Yangilanish matni")
-    users = _load_ids(SUB_USERS_FILE)
-    total = len(users); ok = 0; fail = 0
-    await update.effective_message.reply_text(f"📣 DM jo‘natish boshlandi. Jami foydalanuvchilar: {total}")
-    for cid in list(users):
-        try:
-            await context.bot.send_message(cid, text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-            ok += 1
-            await asyncio.sleep(0.05)
-        except (Forbidden, BadRequest):
-            users.discard(cid); fail += 1
-        except RetryAfter as e:
-            await asyncio.sleep(int(getattr(e, "retry_after", 1)) + 1)
-        except (TimedOut, NetworkError, TelegramError):
-            fail += 1
-    _save_ids(SUB_USERS_FILE, users)
-    await update.effective_message.reply_text(f"✅ Yuborildi: {ok} ta, ❌ xatolik: {fail} ta.")
-
-async def broadcastpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """(OWNER & DM) Reply qilingan postni barcha DM obunachilarga yuborish."""
-    if update.effective_chat.type != "private":
-        return await update.effective_message.reply_text("⛔ Эта команда только DM (приватный чат)е работает.")
-    if not is_owner(update):
-        return await update.effective_message.reply_text("⛔ Эта команда разрешена только владельцу бота.")
-    msg = update.effective_message.reply_to_message
-    if not msg:
-        return await update.effective_message.reply_text("Foydalanish: /broadcastpost — yubormoqchi bo‘lgan xabarga reply qiling.")
-    users = _load_ids(SUB_USERS_FILE)
-    total = len(users); ok = 0; fail = 0
-    await update.effective_message.reply_text(f"📣 DM post tarqatish boshlandi. Jami foydalanuvchilar: {total}")
-    for cid in list(users):
-        try:
-            await context.bot.copy_message(chat_id=cid, from_chat_id=msg.chat_id, message_id=msg.message_id)
-            ok += 1
-            await asyncio.sleep(0.05)
-        except (Forbidden, BadRequest):
-            users.discard(cid); fail += 1
-        except RetryAfter as e:
-            await asyncio.sleep(int(getattr(e, "retry_after", 1)) + 1)
-        except (TimedOut, NetworkError, TelegramError):
-            fail += 1
-    _save_ids(SUB_USERS_FILE, users)
-    await update.effective_message.reply_text(f"✅ Yuborildi: {ok} ta, ❌ xatolik: {fail} ta.")
 
 if __name__ == "__main__":
     main()
