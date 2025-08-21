@@ -1249,9 +1249,15 @@ async def set_commands(app):
         scope=BotCommandScopeAllPrivateChats()
     )
 
+async def post_init(app):
+    await init_db(app)
+    await set_commands(app)
+
+
 def main():
     start_web()
     app = ApplicationBuilder().token(TOKEN).build()
+
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
