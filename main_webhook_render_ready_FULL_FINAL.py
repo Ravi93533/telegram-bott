@@ -642,7 +642,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.type == 'private':
             await dm_upsert_user(update.effective_user)
     except Exception as e:
-log.warning(f"/start dm_upsert_user xatolik: {e}")
+        log.warning(f"/start dm_upsert_user xatolik: {e}")
 kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
     await update.effective_message.reply_text(
     "<b>ПРИВЕТ👋</b>\n\n"
