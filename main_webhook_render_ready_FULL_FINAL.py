@@ -644,7 +644,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         log.warning(f"/start dm_upsert_user xatolik: {e}")
 kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
-    await update.effective_message.reply_text(
+await update.effective_message.reply_text(
     "<b>ПРИВЕТ👋</b>\n\n"
 "Я <b>удаляю</b> из групп любые рекламные посты, ссылки, сообщения о <b>входе/выходе</b> и рекламу от вспомогательных ботов.\n\n"
 "Могу определить ваш <b>ID</b> профиля.\n\n"
