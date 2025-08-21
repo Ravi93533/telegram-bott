@@ -539,7 +539,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
     kb = [[InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]]
     await update.effective_message.reply_text(
-    "<b>ПРИВЕТ👋</b>"
+    "<b>ПРИВЕТ👋</b>\n\n"
 "Я <b>удаляю</b> из групп любые рекламные посты, ссылки, сообщения о <b>входе/выходе</b> и рекламу от вспомогательных ботов.\n\n"
 "Могу определить ваш <b>ID</b> профиля.\n\n"
 "Сделаю обязательным добавление людей в группу и подписку на канал (иначе писать нельзя) ➕\n\n"
@@ -639,7 +639,7 @@ async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except ValueError:
             await update.effective_message.reply_text(
-                "❌ Недопустимое значение. Допустимый диапазон: <b>3–30</b>. Например: <code>/forced 5</code>",
+                "❌ Недопустимое значение. Допустимый диапазон: <b>3–30</b>. Например: <code>/forced 10</code>",
                 parse_mode="HTML"
             )
     else:
@@ -663,7 +663,7 @@ async def on_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not (3 <= val <= 30):
             raise ValueError
         MAJBUR_LIMIT = val
-        await q.edit_message_text(f"✅ Обязательный лимит: <b>{FORCED_LIMIT}</b>", parse_mode="HTML")
+        await q.edit_message_text(f"✅ Обязательный лимит: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
     except Exception:
         await q.edit_message_text("❌ Недопустимое значение.")
 
@@ -1046,7 +1046,7 @@ async def set_commands(app):
             BotCommand("count", "Сколько людей вы добавили"),
             BotCommand("top", "ТОП 100 участников"),
             BotCommand("replycount", "(reply) сколько добавил пользователь"),
-            BotCommand("forced", "Установить лимит обязательных приглашений (3–25)"),
+            BotCommand("forced", "Установить лимит обязательных приглашений (3–30)"),
             BotCommand("forcedoff", "Отключить обязательные приглашения"),
             BotCommand("cleangroup", "Обнулить все счётчики"),
             BotCommand("cleanuser", "(reply) обнулить счётчик пользователя"),
