@@ -1257,7 +1257,6 @@ async def post_init(app):
 def main():
     start_web()
     app = ApplicationBuilder().token(TOKEN).build()
-
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
@@ -1282,7 +1281,7 @@ def main():
     app.add_handler(CommandHandler("replycount", replycount))
     app.add_handler(CommandHandler("cleanuser", cleanuser))
 
-# DM broadcast (owner only)
+    # DM broadcast (owner only)
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("broadcastpost", broadcastpost))
 
@@ -1304,7 +1303,6 @@ def main():
     app.post_init = post_init
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
