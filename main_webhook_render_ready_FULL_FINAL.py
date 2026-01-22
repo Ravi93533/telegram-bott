@@ -390,6 +390,64 @@ UYATLI_SOZLAR = {"апчхуй", "архипиздрит", "ахуй", "ахул
 SUSPECT_KEYWORDS = {"open game", "play", "играть", "открыть игру", "game", "cattea", "gamee", "hamster", "notcoin", "tap to earn", "earn", "clicker"}
 SUSPECT_DOMAINS = {"cattea", "gamee", "hamster", "notcoin", "tgme", "t.me/gamee", "textra.fun", "ton"}
 
+
+# ---------------- URL / reklama detection helpers ----------------
+# Aggressive URL-like detector (including some obfuscations) used by reklama_va_soz_filtri.
+_URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
+_TME_RE = re.compile(r"(?i)\b(?:t\.me|telegram\.me)/\S+")
+# Simple domain detector (to catch e.g. example.com without scheme)
+_DOMAIN_RE = re.compile(r"(?i)\b[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]\.(?:ru|com|net|org|uz|io|me|app|site|xyz|top|online|link|club|tv|info|biz|store|shop|pro|ua|kz|kg|tj|by|de|uk|us|cn|in|tr|ir|fr|it|es)\b")
+# Telegram usernames often look like @channelname (avoid matching short @a etc.)
+_AT_RE = re.compile(r"(?i)(?<!\w)@[a-z0-9_]{5,}\b")
+
+def _normalize_obfuscated_links(s: str) -> str:
+    low = (s or "").lower()
+    # common obfuscations
+    low = low.replace("hxxp://", "http://").replace("hxxps://", "https://")
+    low = low.replace("hxxp", "http")
+    low = low.replace("[.]", ".")
+    # replace " dot " / "(dot)" / "[dot]" / "{dot}" with "."
+    low = re.sub(r"\s*(?:\(dot\)|\[dot\]|\{dot\}|\sdot\s)\s*", ".", low)
+    # collapse whitespace around slashes and dots
+    low = re.sub(r"\s*/\s*", "/", low)
+    low = re.sub(r"\s*\.\s*", ".", low)
+    return low
+
+def contains_url_like(text: str) -> bool:
+    """Return True if text looks like it contains a URL / invite / promo link."""
+    if not text:
+        return False
+
+    low = text.lower()
+
+    # quick domain keyword scan (includes t.me fragments, etc.)
+    try:
+        if any(d in low for d in SUSPECT_DOMAINS):
+            return True
+    except Exception:
+        pass
+
+    norm = _normalize_obfuscated_links(text)
+
+    # schemes / www
+    if _URL_RE.search(norm):
+        return True
+    # telegram links
+    if _TME_RE.search(norm):
+        return True
+    # plain domains
+    if _DOMAIN_RE.search(norm):
+        return True
+    # @username promos (channels/bots), common in ads
+    if _AT_RE.search(norm):
+        return True
+
+    # additional short patterns
+    if re.search(r"(?i)\b(?:joinchat|invite|bit\.ly|goo\.gl|tinyurl\.com)\b", norm):
+        return True
+
+    return False
+
 # ----------- DM Broadcast (Owner only) -----------
 SUB_USERS_FILE = "subs_users.json"
 
@@ -419,7 +477,7 @@ async def init_db(app=None):
         log.warning("DATABASE_URL topilmadi; DM ro'yxati JSON faylga yoziladi (ephemeral).")
         return
     if asyncpg is None:
-        log.error("asyncpg o'rnatilmagan. requirements.txt ga 'asyncpg' qo'shing.")
+        log.error("asyncpg не установлен. Добавьте 'asyncpg' в requirements.txt.")
         return
 
     # PaaS (Render/Railway) Postgres ko'pincha SSL talab qiladi.
@@ -1537,7 +1595,7 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
         try:
             await context.bot.send_message(
                 chat_id=msg.chat_id,
-                text="🚫 Reklama/ssilka: Bot orqali yuborilgan xabar o'chirildi."
+                text="🚫 Реклама/ссылка: сообщение, отправленное через бота, удалено."
             )
         except Exception:
             pass
@@ -1731,7 +1789,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text and update.effective_message.reply_to_message:
         text = update.effective_message.reply_to_message.text_html or update.effective_message.reply_to_message.caption_html
     if not text:
-        return await update.effective_message.reply_text("Foydalanish: /broadcast Yangilanish matni")
+        return await update.effective_message.reply_text("Использование: /broadcast <текст рассылки>")
 
     ids = await dm_all_ids()
     total = len(ids); ok = 0; fail = 0
@@ -1755,7 +1813,7 @@ async def broadcastpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.effective_message.reply_text("⛔ Эта команда разрешена только владельцу бота.")
     msg = update.effective_message.reply_to_message
     if not msg:
-        return await update.effective_message.reply_text("Foydalanish: /broadcastpost — yubormoqchi bo‘lgan xabarga reply qiling.")
+        return await update.effective_message.reply_text("Использование: /broadcastpost — ответьте (reply) на сообщение, которое хотите разослать.")
 
     ids = await dm_all_ids()
     total = len(ids); ok = 0; fail = 0
@@ -1803,9 +1861,15 @@ async def post_init(app):
     await set_commands(app)
 
 
+async def _log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Avoid "No error handlers are registered" and keep logs actionable in Render.
+    logging.exception("Unhandled exception while processing update", exc_info=context.error)
+
+
 def main():
     start_web()
     app = ApplicationBuilder().token(TOKEN).build()
+    app.add_error_handler(_log_error)
     # Commands
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help))
