@@ -9,6 +9,10 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+import html
+import ssl
+from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
+
 from flask import Flask
 
 # --- New (Postgres) ---
@@ -406,6 +410,7 @@ def _get_db_url() -> Optional[str]:
         or os.getenv("DB_URL")
     )
 
+
 async def init_db(app=None):
     """Create asyncpg pool and ensure tables exist. Also migrate JSON -> DB once."""
     global DB_POOL
@@ -416,7 +421,50 @@ async def init_db(app=None):
     if asyncpg is None:
         log.error("asyncpg o'rnatilmagan. requirements.txt ga 'asyncpg' qo'shing.")
         return
-    DB_POOL = await asyncpg.create_pool(dsn=db_url, min_size=1, max_size=5)
+
+    # PaaS (Render/Railway) Postgres ko'pincha SSL talab qiladi.
+    ssl_ctx = ssl.create_default_context()
+
+    # Ba'zan `postgres://` bo'ladi; moslik uchun sxemani normalizatsiya qilamiz.
+    if db_url.startswith("postgres://"):
+        db_url = "postgresql://" + db_url[len("postgres://"):]
+
+    # asyncpg SSL'ni `ssl=` orqali boshqaradi; dsn ichidagi sslmode parametrlari ba'zan muammo qiladi.
+    try:
+        u = urlparse(db_url)
+        qs = dict(parse_qsl(u.query, keep_blank_values=True))
+        for k in list(qs.keys()):
+            if k.lower() in ("sslmode", "sslrootcert", "sslcert", "sslkey"):
+                qs.pop(k, None)
+        db_url = urlunparse(u._replace(query=urlencode(qs)))
+    except Exception:
+        pass
+
+    # Retry/backoff bilan pool ochamiz (Render free kabi DB'larda foydali).
+    DB_POOL = None
+    for attempt in range(1, 6):
+        try:
+            host = (urlparse(db_url).hostname or "")
+            # Railway internal hostlarda SSL kerak bo'lmasligi mumkin
+            use_ssl = False if host.endswith(".railway.internal") else ssl_ctx
+            DB_POOL = await asyncpg.create_pool(
+                dsn=db_url,
+                min_size=1,
+                max_size=5,
+                ssl=use_ssl,
+                timeout=30,
+                max_inactive_connection_lifetime=300,
+            )
+            log.info("Postgres DB_POOL ochildi (attempt=%s).", attempt)
+            break
+        except Exception as e:
+            log.warning("Postgres ulanish xatosi (attempt=%s/5): %r", attempt, e)
+            await asyncio.sleep(min(2 ** (attempt - 1), 16))
+
+    if DB_POOL is None:
+        log.error("Postgres'ga ulanib bo'lmadi. DB funksiyalar vaqtincha o'chadi; bot ishlashda davom etadi.")
+        return
+
     async with DB_POOL.acquire() as con:
         await con.execute(
             """
@@ -431,6 +479,13 @@ async def init_db(app=None):
             );
             """
         )
+
+    # Ensure per-group tables exist
+    try:
+        await init_group_db()
+    except Exception as e:
+        log.warning("init_group_db xatolik: %r", e)
+
     # Migrate from JSON (best-effort, only if DB empty)
     try:
         if DB_POOL:
@@ -447,11 +502,12 @@ async def init_db(app=None):
                                 except Exception:
                                     continue
                                 await con.execute(
-                                    "INSERT INTO dm_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING;", cid_int
+                                    "INSERT INTO dm_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING;",
+                                    cid_int
                                 )
                     log.info(f"Migratsiya: JSON dan Postgresga {len(s)} ta ID import qilindi.")
     except Exception as e:
-        log.warning(f"Migratsiya vaqtida xato: {e}")
+        log.warning("Migratsiya xatolik: %r", e)
 
 async def dm_upsert_user(user):
     """Add/update a user to dm_users (Postgres if available, else JSON)."""
@@ -493,6 +549,406 @@ async def dm_all_ids() -> List[int]:
             return []
     else:
         return list(_load_ids(SUB_USERS_FILE))
+
+
+
+# ==================== PER-GROUP SETTINGS (DB-backed) ====================
+
+# In-memory fallback (DB bo'lmasa ham multi-guruh ishlashi uchun)
+_MEM_GROUP_SETTINGS: dict[int, dict] = {}
+_MEM_GROUP_COUNTS: dict[tuple[int, int], int] = {}
+_MEM_GROUP_PRIVS: set[tuple[int, int]] = set()
+_MEM_GROUP_BLOCKS: dict[tuple[int, int], datetime] = {}
+
+_GROUP_SETTINGS_CACHE: dict[int, dict] = {}
+_GROUP_SETTINGS_CACHE_TS: dict[int, float] = {}
+_GROUP_SETTINGS_TTL = 30.0  # seconds
+_UNSET = object()
+
+def _default_group_settings() -> dict:
+    return {"tun": False, "kanal_username": None, "majbur_limit": 0}
+
+async def init_group_db():
+    """Create per-group tables (settings, counts, privileges, blocks)."""
+    if not DB_POOL:
+        return
+    async with DB_POOL.acquire() as con:
+        await con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_settings (
+                chat_id BIGINT PRIMARY KEY,
+                tun BOOLEAN DEFAULT FALSE,
+                kanal_username TEXT,
+                majbur_limit INT DEFAULT 0,
+                updated_at TIMESTAMPTZ DEFAULT now()
+            );
+            """
+        )
+        await con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_user_counts (
+                chat_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                cnt INT NOT NULL DEFAULT 0,
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (chat_id, user_id)
+            );
+            """
+        )
+        await con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_privileges (
+                chat_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                granted_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (chat_id, user_id)
+            );
+            """
+        )
+        await con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_blocks (
+                chat_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                until_ts TIMESTAMPTZ,
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                PRIMARY KEY (chat_id, user_id)
+            );
+            """
+        )
+
+async def get_group_settings(chat_id: int) -> dict:
+    """Return settings for a group (cached)."""
+    # cache
+    try:
+        import time
+        now = time.time()
+        if chat_id in _GROUP_SETTINGS_CACHE and (now - _GROUP_SETTINGS_CACHE_TS.get(chat_id, 0)) < _GROUP_SETTINGS_TTL:
+            return dict(_GROUP_SETTINGS_CACHE[chat_id])
+    except Exception:
+        pass
+
+    if not DB_POOL:
+        s = dict(_MEM_GROUP_SETTINGS.get(chat_id) or _default_group_settings())
+        _GROUP_SETTINGS_CACHE[chat_id] = dict(s)
+        _GROUP_SETTINGS_CACHE_TS[chat_id] = __import__("time").time()
+        return s
+
+    try:
+        async with DB_POOL.acquire() as con:
+            row = await con.fetchrow(
+                "SELECT tun, kanal_username, majbur_limit FROM group_settings WHERE chat_id=$1;",
+                chat_id
+            )
+        if row:
+            s = {"tun": bool(row["tun"]), "kanal_username": row["kanal_username"], "majbur_limit": int(row["majbur_limit"] or 0)}
+        else:
+            s = _default_group_settings()
+        _GROUP_SETTINGS_CACHE[chat_id] = dict(s)
+        _GROUP_SETTINGS_CACHE_TS[chat_id] = __import__("time").time()
+        return s
+    except Exception as e:
+        log.warning("get_group_settings(DB) xatolik: %r", e)
+        s = dict(_MEM_GROUP_SETTINGS.get(chat_id) or _default_group_settings())
+        return s
+
+async def set_group_settings(chat_id: int, *, tun=_UNSET, kanal_username=_UNSET, majbur_limit=_UNSET):
+    """Upsert group settings; only provided fields are updated."""
+    # in-memory always updated (fallback)
+    s = dict(_MEM_GROUP_SETTINGS.get(chat_id) or _default_group_settings())
+    if tun is not _UNSET:
+        s["tun"] = bool(tun)
+    if kanal_username is not _UNSET:
+        s["kanal_username"] = kanal_username
+    if majbur_limit is not _UNSET:
+        s["majbur_limit"] = int(majbur_limit or 0)
+    _MEM_GROUP_SETTINGS[chat_id] = s
+
+    _GROUP_SETTINGS_CACHE[chat_id] = dict(s)
+    try:
+        _GROUP_SETTINGS_CACHE_TS[chat_id] = __import__("time").time()
+    except Exception:
+        pass
+
+    if not DB_POOL:
+        return
+    try:
+        # build dynamic update
+        cols = []
+        vals = []
+        if tun is not _UNSET:
+            cols.append("tun")
+            vals.append(bool(tun))
+        if kanal_username is not _UNSET:
+            cols.append("kanal_username")
+            vals.append(kanal_username)
+        if majbur_limit is not _UNSET:
+            cols.append("majbur_limit")
+            vals.append(int(majbur_limit or 0))
+        # if nothing to update, just ensure row exists
+        async with DB_POOL.acquire() as con:
+            if not cols:
+                await con.execute(
+                    "INSERT INTO group_settings (chat_id) VALUES ($1) ON CONFLICT (chat_id) DO NOTHING;",
+                    chat_id
+                )
+                return
+            # Insert with full values using COALESCE from existing when not passed
+            # Easier: upsert with defaults but update only provided cols.
+            set_sql = ", ".join([f"{c}=EXCLUDED.{c}" for c in cols] + ["updated_at=now()"])
+            # Provide all columns in insert so excluded has them.
+            await con.execute(
+                f"""
+                INSERT INTO group_settings (chat_id, tun, kanal_username, majbur_limit)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (chat_id) DO UPDATE SET {set_sql};
+                """,
+                chat_id,
+                bool(s.get("tun")),
+                s.get("kanal_username"),
+                int(s.get("majbur_limit") or 0),
+            )
+    except Exception as e:
+        log.warning("set_group_settings(DB) xatolik: %r", e)
+
+async def get_user_count_db(chat_id: int, user_id: int) -> int:
+    if not DB_POOL:
+        return int(_MEM_GROUP_COUNTS.get((chat_id, user_id), 0))
+    try:
+        async with DB_POOL.acquire() as con:
+            v = await con.fetchval(
+                "SELECT cnt FROM group_user_counts WHERE chat_id=$1 AND user_id=$2;",
+                chat_id, user_id
+            )
+        return int(v or 0)
+    except Exception as e:
+        log.warning("get_user_count_db xatolik: %r", e)
+        return int(_MEM_GROUP_COUNTS.get((chat_id, user_id), 0))
+
+async def inc_user_count_db(chat_id: int, user_id: int, delta: int = 1):
+    if delta == 0:
+        return
+    key = (chat_id, user_id)
+    _MEM_GROUP_COUNTS[key] = int(_MEM_GROUP_COUNTS.get(key, 0)) + int(delta)
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute(
+                """
+                INSERT INTO group_user_counts (chat_id, user_id, cnt)
+                VALUES ($1,$2,$3)
+                ON CONFLICT (chat_id, user_id) DO UPDATE SET
+                    cnt = group_user_counts.cnt + EXCLUDED.cnt,
+                    updated_at = now();
+                """,
+                chat_id, user_id, int(delta)
+            )
+    except Exception as e:
+        log.warning("inc_user_count_db xatolik: %r", e)
+
+async def top_group_counts_db(chat_id: int, limit: int = 100) -> List[tuple[int, int]]:
+    if not DB_POOL:
+        items = [((cid, uid), cnt) for (cid, uid), cnt in _MEM_GROUP_COUNTS.items() if cid == chat_id]
+        items.sort(key=lambda x: x[1], reverse=True)
+        return [(uid, cnt) for ((_, uid), cnt) in items[:limit]]
+    try:
+        async with DB_POOL.acquire() as con:
+            rows = await con.fetch(
+                "SELECT user_id, cnt FROM group_user_counts WHERE chat_id=$1 ORDER BY cnt DESC LIMIT $2;",
+                chat_id, int(limit)
+            )
+        return [(int(r["user_id"]), int(r["cnt"])) for r in rows]
+    except Exception as e:
+        log.warning("top_group_counts_db xatolik: %r", e)
+        items = [((cid, uid), cnt) for (cid, uid), cnt in _MEM_GROUP_COUNTS.items() if cid == chat_id]
+        items.sort(key=lambda x: x[1], reverse=True)
+        return [(uid, cnt) for ((_, uid), cnt) in items[:limit]]
+
+async def clear_group_counts_db(chat_id: int):
+    # memory
+    for k in list(_MEM_GROUP_COUNTS.keys()):
+        if k[0] == chat_id:
+            _MEM_GROUP_COUNTS.pop(k, None)
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute("DELETE FROM group_user_counts WHERE chat_id=$1;", chat_id)
+    except Exception as e:
+        log.warning("clear_group_counts_db xatolik: %r", e)
+
+async def grant_priv_db(chat_id: int, user_id: int):
+    _MEM_GROUP_PRIVS.add((chat_id, user_id))
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute(
+                "INSERT INTO group_privileges (chat_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING;",
+                chat_id, user_id
+            )
+    except Exception as e:
+        log.warning("grant_priv_db xatolik: %r", e)
+
+async def group_has_priv(chat_id: int, user_id: int) -> bool:
+    if (chat_id, user_id) in _MEM_GROUP_PRIVS:
+        return True
+    if not DB_POOL:
+        return False
+    try:
+        async with DB_POOL.acquire() as con:
+            v = await con.fetchval(
+                "SELECT 1 FROM group_privileges WHERE chat_id=$1 AND user_id=$2;",
+                chat_id, user_id
+            )
+        return bool(v)
+    except Exception as e:
+        log.warning("group_has_priv xatolik: %r", e)
+        return False
+
+async def clear_privs_db(chat_id: int):
+    _MEM_GROUP_PRIVS.difference_update({k for k in _MEM_GROUP_PRIVS if k[0] == chat_id})
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute("DELETE FROM group_privileges WHERE chat_id=$1;", chat_id)
+    except Exception as e:
+        log.warning("clear_privs_db xatolik: %r", e)
+
+async def set_block_until_db(chat_id: int, user_id: int, until_ts: datetime):
+    _MEM_GROUP_BLOCKS[(chat_id, user_id)] = until_ts
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute(
+                """
+                INSERT INTO group_blocks (chat_id, user_id, until_ts)
+                VALUES ($1,$2,$3)
+                ON CONFLICT (chat_id, user_id) DO UPDATE SET
+                    until_ts=EXCLUDED.until_ts,
+                    updated_at=now();
+                """,
+                chat_id, user_id, until_ts
+            )
+    except Exception as e:
+        log.warning("set_block_until_db xatolik: %r", e)
+
+async def get_block_until_db(chat_id: int, user_id: int) -> Optional[datetime]:
+    if (chat_id, user_id) in _MEM_GROUP_BLOCKS:
+        return _MEM_GROUP_BLOCKS.get((chat_id, user_id))
+    if not DB_POOL:
+        return None
+    try:
+        async with DB_POOL.acquire() as con:
+            v = await con.fetchval(
+                "SELECT until_ts FROM group_blocks WHERE chat_id=$1 AND user_id=$2;",
+                chat_id, user_id
+            )
+        if v:
+            _MEM_GROUP_BLOCKS[(chat_id, user_id)] = v
+        return v
+    except Exception as e:
+        log.warning("get_block_until_db xatolik: %r", e)
+        return _MEM_GROUP_BLOCKS.get((chat_id, user_id))
+
+async def clear_block_db(chat_id: int, user_id: int):
+    _MEM_GROUP_BLOCKS.pop((chat_id, user_id), None)
+    if not DB_POOL:
+        return
+    try:
+        async with DB_POOL.acquire() as con:
+            await con.execute("DELETE FROM group_blocks WHERE chat_id=$1 AND user_id=$2;", chat_id, user_id)
+    except Exception as e:
+        log.warning("clear_block_db xatolik: %r", e)
+
+def _parse_kanal_usernames(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    s = str(raw).strip()
+    if not s:
+        return []
+    # stored as JSON list
+    if s.startswith("["):
+        try:
+            data = json.loads(s)
+            if isinstance(data, list):
+                out = []
+                for x in data:
+                    if not x:
+                        continue
+                    t = str(x).strip()
+                    if not t:
+                        continue
+                    if not t.startswith("@"):
+                        t = "@" + t.lstrip("@")
+                    out.append(t)
+                return out
+        except Exception:
+            pass
+    # fallback: split by spaces
+    parts = [p for p in re.split(r"[\s,]+", s) if p]
+    out = []
+    for p in parts:
+        t = p.strip()
+        if not t:
+            continue
+        if not t.startswith("@"):
+            t = "@" + t.lstrip("@")
+        out.append(t)
+    # unique preserve order
+    seen=set()
+    res=[]
+    for t in out:
+        if t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        res.append(t)
+    return res
+
+async def _check_all_channels(user_id: int, bot, kanal_list: List[str]) -> tuple[bool, List[str]]:
+    missing = []
+    for ch in kanal_list:
+        try:
+            m = await bot.get_chat_member(ch, user_id)
+            if m.status not in ("member", "administrator", "creator"):
+                missing.append(ch)
+        except Exception:
+            missing.append(ch)
+    return (len(missing) == 0, missing)
+
+# Mention helpers (HTML)
+def _user_label_from_user(u) -> str:
+    if getattr(u, "username", None):
+        return "@" + u.username
+    name = (getattr(u, "full_name", None) or "").strip()
+    if not name:
+        name = (getattr(u, "first_name", None) or "").strip()
+    return name or str(u.id)
+
+def _mention_userid_html(user_id: int, label: str) -> str:
+    return f'<a href="tg://user?id={user_id}">{html.escape(str(label))}</a>'
+
+async def _mention_from_id(bot, chat_id: int, user_id: int, cache: dict[int, str]) -> str:
+    if user_id in cache:
+        return cache[user_id]
+    label = str(user_id)
+    try:
+        cm = await bot.get_chat_member(chat_id, user_id)
+        u = getattr(cm, "user", None)
+        if u:
+            label = _user_label_from_user(u)
+    except Exception:
+        pass
+    mention = _mention_userid_html(user_id, label)
+    cache[user_id] = mention
+    return mention
+
+# ==================== END PER-GROUP SETTINGS (DB-backed) ====================
+
+
 
 async def dm_remove_user(user_id: int):
     global DB_POOL
@@ -689,44 +1145,77 @@ async def id_berish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(f"🆔 {user.first_name}, ваш Telegram ID: {user.id}")
 
 async def tun(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global TUN_REJIMI
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    TUN_REJIMI = True
+    chat_id = update.effective_chat.id
+    await set_group_settings(chat_id, tun=True)
     await update.effective_message.reply_text("🌙 Ночной режим включен. Сообщения пользователей будут удалены.")
 
+
 async def tunoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global TUN_REJIMI
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    TUN_REJIMI = False
+    chat_id = update.effective_chat.id
+    await set_group_settings(chat_id, tun=False)
     await update.effective_message.reply_text("🌞 Ночной режим выключен.")
+
 
 async def ruxsat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    if not update.effective_message.reply_to_message:
-        return await update.effective_message.reply_text("Пожалуйста, ОТВЕТЬте на сообщение пользователя.")
-    uid = update.effective_message.reply_to_message.from_user.id
-    RUXSAT_USER_IDS.add(uid)
-    await update.effective_message.reply_text(f"✅ <code>{uid}</code> Пользователю разрешено.", parse_mode="HTML")
+    msg = update.effective_message
+    if not msg.reply_to_message:
+        return await msg.reply_text("Пожалуйста, ОТВЕТЬте на сообщение пользователя.")
+    chat_id = update.effective_chat.id
+    uid = msg.reply_to_message.from_user.id
+    await grant_priv_db(chat_id, uid)
+    # agar bloklangan bo'lsa, blokdan chiqaramiz
+    try:
+        await clear_block_db(chat_id, uid)
+        await context.bot.restrict_chat_member(chat_id=chat_id, user_id=uid, permissions=FULL_PERMS)
+    except Exception:
+        pass
+    await msg.reply_text(f"✅ <code>{uid}</code> Пользователю разрешено.", parse_mode="HTML")
+
 
 async def kanal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    global KANAL_USERNAME
+    chat_id = update.effective_chat.id
     if context.args:
-        KANAL_USERNAME = context.args[0]
-        await update.effective_message.reply_text(f"📢 Обязательный канал: {KANAL_USERNAME}")
+        chans = []
+        for a in context.args:
+            a = (a or "").strip()
+            if not a:
+                continue
+            if not a.startswith("@"):
+                a = "@" + a.lstrip("@")
+            chans.append(a)
+        # unique preserve order
+        seen=set()
+        uniq=[]
+        for c in chans:
+            k=c.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            uniq.append(c)
+        # store as JSON list for multi-channel support
+        raw = json.dumps(uniq, ensure_ascii=False) if len(uniq) != 1 else uniq[0]
+        await set_group_settings(chat_id, kanal_username=raw)
+        display = " ".join(uniq) if uniq else ""
+        await update.effective_message.reply_text(f"📢 Обязательный канал: {display}")
     else:
         await update.effective_message.reply_text("Образец: /Channel @username")
+
 
 async def kanaloff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    global KANAL_USERNAME
-    KANAL_USERNAME = None
+    chat_id = update.effective_chat.id
+    await set_group_settings(chat_id, kanal_username=None)
     await update.effective_message.reply_text("🚫 Обязательное требование к каналу удалено.")
+
 
 def majbur_klaviatura():
     rows = [[3, 5, 7, 10, 12], [15, 18, 20, 25, 30]]
@@ -737,15 +1226,15 @@ def majbur_klaviatura():
 async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    global MAJBUR_LIMIT
+    chat_id = update.effective_chat.id
     if context.args:
         try:
             val = int(context.args[0])
             if not (3 <= val <= 30):
                 raise ValueError
-            MAJBUR_LIMIT = val
+            await set_group_settings(chat_id, majbur_limit=val)
             await update.effective_message.reply_text(
-                f"✅ Обязательный лимит добавления лиц: <b>{MAJBUR_LIMIT}</b>",
+                f"✅ Обязательный лимит добавления лиц: <b>{val}</b>",
                 parse_mode="HTML"
             )
         except ValueError:
@@ -760,109 +1249,167 @@ async def majbur(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=majbur_klaviatura()
         )
 
+
 async def on_set_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_admin(update):
-        return await update.callback_query.answer("Только админы!", show_alert=True)
     q = update.callback_query
+    user = q.from_user
+    chat = q.message.chat if q.message else None
+    if not (user and chat):
+        return await q.answer()
+    # only admins
+    try:
+        member = await context.bot.get_chat_member(chat.id, user.id)
+        if member.status not in ("administrator", "creator"):
+            return await q.answer("Только администраторы!", show_alert=True)
+    except Exception:
+        return await q.answer("Ошибка проверки администратора.", show_alert=True)
+
     await q.answer()
-    data = q.data.split(":", 1)[1]
-    global MAJBUR_LIMIT
+
+    data = q.data.split(":", 1)[1] if ":" in q.data else ""
     if data == "cancel":
-        return await q.edit_message_text("❌ ОТМЕНЕНО.")
+        return await q.edit_message_text("❌ Отменено.")
     try:
         val = int(data)
         if not (3 <= val <= 30):
             raise ValueError
-        MAJBUR_LIMIT = val
-        await q.edit_message_text(f"✅ Обязательный лимит: <b>{MAJBUR_LIMIT}</b>", parse_mode="HTML")
-    except Exception:
-        await q.edit_message_text("❌ Недопустимое значение.")
+    except ValueError:
+        return await q.edit_message_text("❌ Неверное значение.")
+
+    await set_group_settings(chat.id, majbur_limit=val)
+    await q.edit_message_text(f"✅ Обязательный лимит: <b>{val}</b>", parse_mode="HTML")
+
 
 async def majburoff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    global MAJBUR_LIMIT
-    MAJBUR_LIMIT = 0
+    chat_id = update.effective_chat.id
+    await set_group_settings(chat_id, majbur_limit=0)
     await update.effective_message.reply_text("🚫 Обязательное добавление лица было отключено..")
+
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    if not FOYDALANUVCHI_HISOBI:
-        return await update.effective_message.reply_text("Пока никто никого не добавил.")
-    items = sorted(FOYDALANUVCHI_HISOBI.items(), key=lambda x: x[1], reverse=True)[:100]
+    chat_id = update.effective_chat.id
+    items = await top_group_counts_db(chat_id, limit=100)
+    if not items:
+        return await update.effective_message.reply_text("Пока никто не добавил людей.")
     lines = ["🏆 <b>ТОП 100 участников по добавлениям</b> (TOP 100):"]
+    cache: dict[int, str] = {}
     for i, (uid, cnt) in enumerate(items, start=1):
-        lines.append(f"{i}. <code>{uid}</code> — {cnt} ta")
+        mention = await _mention_from_id(context.bot, chat_id, uid, cache)
+        lines.append(f"{i}. {mention} — <b>{cnt}</b> ta")
     await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
+
 
 async def cleangroup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
         return await update.effective_message.reply_text("⛔ Только для администраторов.")
-    FOYDALANUVCHI_HISOBI.clear()
-    RUXSAT_USER_IDS.clear()
-    await update.effective_message.reply_text("🗑 Счётчики и привилегии обнулены.")
+    chat_id = update.effective_chat.id
+    await clear_group_counts_db(chat_id)
+    await clear_privs_db(chat_id)
+    await update.effective_message.reply_text("🗑 Счёт и привилегии были сброшены на 0 для этой группы.")
+
 
 async def count_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
     uid = update.effective_user.id
-    cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
-    if MAJBUR_LIMIT > 0:
-        qoldi = max(MAJBUR_LIMIT - cnt, 0)
-        await update.effective_message.reply_text(f"📊 Вы {cnt} шт добавили людей. Осталось: {осталось} шт.")
+    settings = await get_group_settings(chat_id)
+    limit = int(settings.get("majbur_limit") or 0)
+    cnt = await get_user_count_db(chat_id, uid)
+    if limit > 0:
+        qoldi = max(limit - cnt, 0)
+        await update.effective_message.reply_text(f"📊 Вы {cnt} шт добавили людей. Осталось: {qoldi} шт.")
     else:
         await update.effective_message.reply_text(f"📊 Вы {cnt} шт добавили людей. (Принудительное добавление не активно)")
 
+
 async def replycount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Только для админов.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     msg = update.effective_message
     if not msg.reply_to_message:
-        return await msg.reply_text("Пожалуйста, ОТВЕТЬте на сообщение, чей аккаунт вы хотите увидеть.")
+        return await msg.reply_text("Пожалуйста, ответьте пользователю (reply), чтобы узнать его счёт.")
+    chat_id = update.effective_chat.id
     uid = msg.reply_to_message.from_user.id
-    cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
-    await msg.reply_text(f"👤 <code>{uid}</code> {cnt} шт добавил людей.", parse_mode="HTML")
+    cnt = await get_user_count_db(chat_id, uid)
+    await msg.reply_text(f"📊 <code>{uid}</code> добавил: <b>{cnt}</b>", parse_mode="HTML")
+
 
 async def cleanuser(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update):
-        return await update.effective_message.reply_text("⛔ Только для админов.")
+        return await update.effective_message.reply_text("⛔ Только для администраторов.")
     msg = update.effective_message
     if not msg.reply_to_message:
-        return await msg.reply_text("Пожалуйста, ОТВЕТЬте на сообщение нужного вам пользователя 0.")
+        return await msg.reply_text("Пожалуйста, ответьте пользователю (reply), чтобы сбросить его счёт.")
+    chat_id = update.effective_chat.id
     uid = msg.reply_to_message.from_user.id
-    FOYDALANUVCHI_HISOBI[uid] = 0
-    RUXSAT_USER_IDS.discard(uid)
-    await msg.reply_text(f"🗑 <code>{uid}</code> Счет пользователя сброшена до 0 (привилегия удалена).", parse_mode="HTML")
+    # set to 0 by deleting row; also remove priv
+    try:
+        if DB_POOL:
+            async with DB_POOL.acquire() as con:
+                await con.execute("DELETE FROM group_user_counts WHERE chat_id=$1 AND user_id=$2;", chat_id, uid)
+                await con.execute("DELETE FROM group_privileges WHERE chat_id=$1 AND user_id=$2;", chat_id, uid)
+        _MEM_GROUP_COUNTS.pop((chat_id, uid), None)
+        _MEM_GROUP_PRIVS.discard((chat_id, uid))
+    except Exception:
+        pass
+    await msg.reply_text(f"🗑 Сброшено: <code>{uid}</code>", parse_mode="HTML")
+
 
 async def kanal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    uid = q.from_user.id
+    data = (q.data or "")
+
+    # owner check (if encoded)
+    owner_id = None
+    if ":" in data:
+        try:
+            owner_id = int(data.split(":", 1)[1])
+        except Exception:
+            owner_id = None
+        if owner_id and owner_id != uid:
+            return await q.answer("Эта кнопка не для вас!", show_alert=True)
+
     await q.answer()
-    user_id = q.from_user.id
-    if not KANAL_USERNAME:
-        return await q.edit_message_text("⚠️ Канал не настроен.")
-    try:
-        member = await context.bot.get_chat_member(KANAL_USERNAME, user_id)
-        if member.status in ("member", "administrator", "creator"):
-            # ⬇️ To'liq ruxsat beramiz (guruh sozlamalari darajasida)
-            try:
-                await context.bot.restrict_chat_member(
-                    chat_id=q.message.chat.id,
-                    user_id=user_id,
-                    permissions=FULL_PERMS,
-                )
-            except Exception:
-                pass
-            await q.edit_message_text("✅ Ваше членство подтверждено. Теперь вы можете публиковать сообщения в группе.")
-        else:
-            await q.edit_message_text("❌ Вы еще не являетесь участником канала.")
-    except Exception:
-        await q.edit_message_text("⚠️ Ошибка проверки. Неверное имя пользователя канала или бот не является участником канала.")
+    chat_id = q.message.chat.id if q.message else None
+    if not chat_id:
+        return
+
+    settings = await get_group_settings(chat_id)
+    kanal_list = _parse_kanal_usernames(settings.get("kanal_username"))
+
+    if not kanal_list:
+        # requirement disabled
+        try:
+            await context.bot.restrict_chat_member(chat_id=chat_id, user_id=uid, permissions=FULL_PERMS)
+        except Exception:
+            pass
+        return await q.edit_message_text("✅ Требование к каналу отключено. Теперь вы можете писать в группе.")
+
+    ok, _missing = await _check_all_channels(uid, context.bot, kanal_list)
+    if ok:
+        try:
+            await context.bot.restrict_chat_member(
+                chat_id=chat_id,
+                user_id=uid,
+                permissions=FULL_PERMS,
+            )
+        except Exception:
+            pass
+        return await q.edit_message_text("✅ Ваше членство подтверждено. Теперь вы можете публиковать сообщения в группе.")
+    return await q.edit_message_text("❌ Вы еще не являетесь участником канала.")
+
 
 async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
 
     # faqat ogohlantirish olgan egasi bosa oladi
-    data = q.data
+    data = q.data or ""
+    owner_id = None
     if ":" in data:
         try:
             owner_id = int(data.split(":", 1)[1])
@@ -871,27 +1418,34 @@ async def on_check_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if owner_id and owner_id != uid:
             return await q.answer("Эта кнопка не для вас!", show_alert=True)
 
-    cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
+    chat_id = q.message.chat.id if q.message else None
+    if not chat_id:
+        return await q.answer()
+
+    settings = await get_group_settings(chat_id)
+    limit = int(settings.get("majbur_limit") or 0)
+    cnt = await get_user_count_db(chat_id, uid)
 
     # Talab bajarilgan holat: to'liq ruxsat
-    if uid in RUXSAT_USER_IDS or (MAJBUR_LIMIT > 0 and cnt >= MAJBUR_LIMIT):
+    if await group_has_priv(chat_id, uid) or (limit > 0 and cnt >= limit):
         try:
             await context.bot.restrict_chat_member(
-                chat_id=q.message.chat.id,
+                chat_id=chat_id,
                 user_id=uid,
                 permissions=FULL_PERMS,
             )
         except Exception:
             pass
-        BLOK_VAQTLARI.pop((q.message.chat.id, uid), None)
+        await clear_block_db(chat_id, uid)
         return await q.edit_message_text("✅ Запрос выполнен! Теперь вы можете писать в группе.")
 
     # Yetarli emas holat: MODAL oynacha
-    qoldi = max(MAJBUR_LIMIT - cnt, 0)
+    qoldi = max(limit - cnt, 0)
     return await q.answer(
         f"❗ Вы пока {cnt} шт добавили пользователейz и еще {qoldi} шт надо добавить пользователей",
         show_alert=True
     )
+
 
 async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -907,11 +1461,18 @@ async def on_grant_priv(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await q.answer("Ошибка при проверке.", show_alert=True)
     await q.answer()
     try:
-        target_id = int(q.data.split(":", 1)[1])
+        target_id = int((q.data or "").split(":", 1)[1])
     except Exception:
         return await q.edit_message_text("❌ Неверная информация.")
-    RUXSAT_USER_IDS.add(target_id)
+    await grant_priv_db(chat.id, target_id)
+    # Unblock if blocked
+    try:
+        await clear_block_db(chat.id, target_id)
+        await context.bot.restrict_chat_member(chat_id=chat.id, user_id=target_id, permissions=FULL_PERMS)
+    except Exception:
+        pass
     await q.edit_message_text(f"🎟 <code>{target_id}</code> Пользователю предоставлена ​​привилегия. Теперь он может писать.", parse_mode="HTML")
+
 
 # ----------- Filters -----------
 async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -922,165 +1483,133 @@ async def reklama_va_soz_filtri(update: Update, context: ContextTypes.DEFAULT_TY
             return
     except Exception:
         pass
+
     if not msg or not msg.chat or not msg.from_user:
         return
+
     # Admin/creator/guruh nomidan xabarlar — teginmaymiz
     if await is_privileged_message(msg, context.bot):
         return
+
     # Oq ro'yxat
     if msg.from_user.id in WHITELIST or (msg.from_user.username and msg.from_user.username in WHITELIST):
         return
-    # Tun rejimi
-    if TUN_REJIMI:
+
+    chat_id = msg.chat_id
+    settings = await get_group_settings(chat_id)
+
+    # Tun rejimi (faqat shu guruh uchun)
+    if settings.get("tun"):
         try:
             await msg.delete()
-        except:
+        except Exception:
             pass
-        return
-    # Kanal a'zoligi
-    if not await kanal_tekshir(msg.from_user.id, context.bot):
-        try:
-            await msg.delete()
-        except:
-            pass
-        kb = [
-            [InlineKeyboardButton("✅ Я подписался", callback_data="kanal_azo")],
-            [InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))]
-        ]
-        await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, вы не подписаны на канал {KANAL_USERNAME}!",
-    reply_markup=InlineKeyboardMarkup(kb),
-    parse_mode="HTML"
-)
         return
 
+    # Kanal a'zoligi (faqat shu guruh uchun)
+    kanal_list = _parse_kanal_usernames(settings.get("kanal_username"))
+    if kanal_list:
+        ok, _missing = await _check_all_channels(msg.from_user.id, context.bot, kanal_list)
+        if not ok:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            mention_html = _mention_userid_html(msg.from_user.id, _user_label_from_user(msg.from_user))
+            display = " ".join(kanal_list)
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Я подписался", callback_data=f"kanal_azo:{msg.from_user.id}")
+            ]])
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ {mention_html}, вы не подписаны на канал {display}!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb
+            )
+            return
+
+    # agar Bot bo'lsa: reklama/ssilka, til/username
+    if msg.via_bot:
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        try:
+            await context.bot.send_message(
+                chat_id=msg.chat_id,
+                text="🚫 Reklama/ssilka: Bot orqali yuborilgan xabar o'chirildi."
+            )
+        except Exception:
+            pass
+        return
+
+    # text / caption tekshiramiz
     text = msg.text or msg.caption or ""
-    entities = msg.entities or msg.caption_entities or []
-
-    # Inline bot orqali kelgan xabar — ko'pincha game reklama
-    if getattr(msg, "via_bot", None):
-        try:
-            await msg.delete()
-        except:
-            pass
-        await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, Скрытые ссылки запрещены!",
-    reply_markup=add_to_group_kb(context.bot.username),
-    parse_mode="HTML"
-)
+    if not text:
         return
 
-    # Tugmalarda game/web-app/URL bo'lsa — blok
-    if has_suspicious_buttons(msg):
-        try:
-            await msg.delete()
-        except:
-            pass
-        await context.bot.send_message(
-            chat_id=msg.chat_id,
-            text="⚠️ GAME/veb-app реклама кнопок запрещена!",
-            reply_markup=add_to_group_kb(context.bot.username)
-        )
-        return
-
-    # Matndan o‘yin reklamasini aniqlash
+    # suspicious keywords
     low = text.lower()
+
+    # Matndan o‘yin reklamasini aniqlash (keyin o‘chirib yuboramiz)
     if any(k in low for k in SUSPECT_KEYWORDS):
         try:
             await msg.delete()
-        except:
+        except Exception:
             pass
-        await context.bot.send_message(
-            chat_id=msg.chat_id,
-            text="⚠️ Реклама игр запрещена!",
-            reply_markup=add_to_group_kb(context.bot.username)
-        )
         return
 
-    # Botlardan kelgan reklama/havola/game
-    if getattr(msg.from_user, "is_bot", False):
-        has_game = bool(getattr(msg, "game", None))
-        has_url_entity = any(ent.type in ("text_link", "url", "mention") for ent in entities)
-        has_url_text = any(x in low for x in ("t.me","telegram.me","http://","https://","www.","youtu.be","youtube.com"))
-        if has_game or has_url_entity or has_url_text:
+    # URL detection + aggressive filter (including obfuscations)
+    if contains_url_like(text):
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        return
+
+    # Profanity / banned words (word-boundary + contains)
+    for w in BAD_WORDS:
+        if w in low:
             try:
                 await msg.delete()
-            except:
+            except Exception:
                 pass
-            await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, reklama/ssilka yuborish taqiqlangan!",
-    reply_markup=add_to_group_kb(context.bot.username),
-    parse_mode="HTML"
-)
             return
 
-    # Yashirin yoki aniq ssilkalar
-    for ent in entities:
-        if ent.type in ("text_link", "url", "mention"):
-            url = getattr(ent, "url", "") or ""
-            if url and ("t.me" in url or "telegram.me" in url or "http://" in url or "https://" in url):
-                try:
-                    await msg.delete()
-                except:
-                    pass
-                await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, Скрытые ссылки запрещены!",
-    reply_markup=add_to_group_kb(context.bot.username),
-    parse_mode="HTML"
-)
-                return
 
-    if any(x in low for x in ("t.me","telegram.me","@","www.","https://youtu.be","http://","https://")):
-        try:
-            await msg.delete()
-        except:
-            pass
-        await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, Реклама/ссылки запрещены!",
-    reply_markup=add_to_group_kb(context.bot.username),
-    parse_mode="HTML"
-)
-        return
-
-    # So'kinish
-    sozlar = matndan_sozlar_olish(text)
-    if any(s in UYATLI_SOZLAR for s in sozlar):
-        try:
-            await msg.delete()
-        except:
-            pass
-        await context.bot.send_message(
-    chat_id=msg.chat_id,
-    text=f"⚠️ {msg.from_user.mention_html()}, Нецензурная слово запрещена!",
-    reply_markup=add_to_group_kb(context.bot.username),
-    parse_mode="HTML"
-)
-        return
-
-# Yangi a'zolarni qo'shganlarni hisoblash hamda kirdi/chiqdi xabarlarni o'chirish
 async def on_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
+    if not msg:
+        return
     adder = msg.from_user
     members = msg.new_chat_members or []
     if not adder:
         return
+    chat_id = msg.chat_id
+    add_count = 0
     for m in members:
         if adder.id != m.id:
-            FOYDALANUVCHI_HISOBI[adder.id] += 1
+            add_count += 1
+    if add_count:
+        await inc_user_count_db(chat_id, adder.id, add_count)
     try:
         await msg.delete()
-    except:
+    except Exception:
         pass
 
-# Majburiy qo'shish filtri — yetmaganlarda 5 daqiqaga blok ham qo'yiladi
-async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if MAJBUR_LIMIT <= 0:
+
+
+async def on_left_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.effective_message
+    if not msg:
         return
+    try:
+        await msg.delete()
+    except Exception:
+        pass
+
+
+async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     # 🔒 Linked kanalning avtomatik forward postlari — teginmaymiz
     try:
@@ -1088,63 +1617,78 @@ async def majbur_filter(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     except Exception:
         pass
-    if not msg or not msg.from_user:
+
+    if not msg or not msg.chat or not msg.from_user:
         return
+
+    # Admin/creator/guruh nomidan xabarlar — teginmaymiz
     if await is_privileged_message(msg, context.bot):
+        return
+
+    # Oq ro'yxat
+    if msg.from_user.id in WHITELIST or (msg.from_user.username and msg.from_user.username in WHITELIST):
+        return
+
+    chat_id = msg.chat_id
+    settings = await get_group_settings(chat_id)
+    limit = int(settings.get("majbur_limit") or 0)
+    if limit <= 0:
         return
 
     uid = msg.from_user.id
 
-    # Agar foydalanuvchi hanuz blokda bo'lsa — xabarini o'chirib, hech narsa yubormaymiz
+    # Privileged user (ruxsat)
+    if await group_has_priv(chat_id, uid):
+        return
+
+    # Agar hozir bloklangan bo'lsa (DB), yana o'chiramiz va qaytamiz
     now = datetime.now(timezone.utc)
-    key = (msg.chat_id, uid)
-    until_old = BLOK_VAQTLARI.get(key)
-    if until_old and now < until_old:
+    until_prev = await get_block_until_db(chat_id, uid)
+    if until_prev and now < until_prev:
         try:
             await msg.delete()
-        except:
+        except Exception:
             pass
         return
-    if uid in RUXSAT_USER_IDS:
+
+    cnt = await get_user_count_db(chat_id, uid)
+    if cnt >= limit:
         return
 
-    cnt = FOYDALANUVCHI_HISOBI.get(uid, 0)
-    if cnt >= MAJBUR_LIMIT:
-        return
-
-    # Xabarni o'chiramiz
+    # delete message
     try:
         await msg.delete()
-    except:
-        return
+    except Exception:
+        pass
 
-    # 1 daqiqaga blok
-    until = datetime.now(timezone.utc) + timedelta(minutes=1)
-    BLOK_VAQTLARI[(msg.chat_id, uid)] = until
+    qoldi = max(limit - cnt, 0)
+
+    # 1 daqiqaga bloklash (har safar tekshirib qayta bloklaydi)
+    until = now + timedelta(minutes=1)
+    await set_block_until_db(chat_id, uid, until)
+
     try:
         await context.bot.restrict_chat_member(
-            chat_id=msg.chat_id,
+            chat_id=chat_id,
             user_id=uid,
             permissions=BLOCK_PERMS,
             until_date=until
         )
-    except Exception as e:
-        log.warning(f"Restrict failed: {e}")
+    except Exception:
+        pass
 
-    qoldi = max(MAJBUR_LIMIT - cnt, 0)
-    until_str = until.strftime('%H:%M')
-    kb = [
-        [InlineKeyboardButton("✅ Я добавил людей", callback_data=f"check_added:{uid}")],
-        [InlineKeyboardButton("🎟 Выдать привилегию", callback_data=f"grant:{uid}")],
-        [InlineKeyboardButton("➕ Добавить в группу", url=admin_add_link(context.bot.username))],
-        [InlineKeyboardButton("⏳ заблокирован на минуту 1", callback_data="noop")]
-    ]
+    kb = [[InlineKeyboardButton("✅ Я добавил людей", callback_data=f"check_added:{uid}")],
+          [InlineKeyboardButton("🎟 Выдать привилегию", callback_data=f"grant:{uid}")],
+          [InlineKeyboardButton("👥 Добавить людей", url="https://t.me/share/url?url=Добавьтесь%20в%20нашу%20группу")]]
     await context.bot.send_message(
-        chat_id=msg.chat_id,
-        text=f"⚠️ Для публикации в группе нужно добавить {MAJBUR_LIMIT} человека! Осталось: {qoldi}.",
+        chat_id=chat_id,
+        text=f"⚠️ Для публикации в группе нужно добавить {limit} человека! Осталось: {qoldi}.\n"
+             f"⏳ заблокирован на минуту 1.\n\n"
+             "✅ Добавьте людей и нажмите кнопку ниже:",
         reply_markup=InlineKeyboardMarkup(kb)
     )
-# -------------- Bot my_status (admin emas) ogohlantirish --------------
+
+
 async def on_my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         st = update.my_chat_member.new_chat_member.status
@@ -1251,6 +1795,11 @@ async def set_commands(app):
 
 async def post_init(app):
     await init_db(app)
+    # per-group tables (safety)
+    try:
+        await init_group_db()
+    except Exception:
+        pass
     await set_commands(app)
 
 
@@ -1287,13 +1836,14 @@ def main():
 
     # Callbacks
     app.add_handler(CallbackQueryHandler(on_set_limit, pattern=r"^set_limit:"))
-    app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo$"))
+    app.add_handler(CallbackQueryHandler(kanal_callback, pattern=r"^kanal_azo(?::\d+)?$"))
     app.add_handler(CallbackQueryHandler(on_check_added, pattern=r"^check_added(?::\d+)?$"))
     app.add_handler(CallbackQueryHandler(on_grant_priv, pattern=r"^grant:"))
     app.add_handler(CallbackQueryHandler(lambda u,c: u.callback_query.answer(""), pattern=r"^noop$"))
 
      # Events & Filters
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
+    app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, on_left_member))
     media_filters = (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION | filters.VOICE | filters.VIDEO_NOTE | filters.GAME)
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE, track_private), group=-3)
     app.add_handler(MessageHandler(media_filters & (~filters.COMMAND), majbur_filter), group=-2)
